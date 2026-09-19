@@ -7,19 +7,18 @@ using FlowOps.Application.DTOs;
 using FlowOps.Application.Interfaces;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace FlowOps.Application.Services;
 
 public class WorkItemService : IWorkItemService
 {
-    private readonly IFlowOpsDbContext _dbContext;
+    private readonly IWorkItemStore _workItemStore;
     private readonly ILogger<WorkItemService> _logger;
 
-    public WorkItemService(IFlowOpsDbContext dbContext, ILogger<WorkItemService> logger)
+    public WorkItemService(IWorkItemStore workItemStore, ILogger<WorkItemService> logger)
     {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _workItemStore = workItemStore ?? throw new ArgumentNullException(nameof(workItemStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -27,10 +26,7 @@ public class WorkItemService : IWorkItemService
     {
         _logger.LogInformation("Retrieving all work items.");
 
-        var items = await _dbContext.WorkItems
-            .AsNoTracking()
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .ToListAsync(cancellationToken);
+        var items = await _workItemStore.ListAsync(cancellationToken);
 
         return items.Select(WorkItemResponse.FromEntity).ToList();
     }
@@ -39,9 +35,7 @@ public class WorkItemService : IWorkItemService
     {
         _logger.LogInformation("Retrieving work item with ID: {WorkItemId}", id);
 
-        var item = await _dbContext.WorkItems
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var item = await _workItemStore.GetByIdAsync(id, cancellationToken);
 
         return item == null ? null : WorkItemResponse.FromEntity(item);
     }
@@ -67,8 +61,8 @@ public class WorkItemService : IWorkItemService
             assigneeName: request.AssigneeName
         );
 
-        _dbContext.WorkItems.Add(workItem);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _workItemStore.AddAsync(workItem, cancellationToken);
+        await _workItemStore.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Successfully created work item {WorkItemId}", workItem.Id);
 

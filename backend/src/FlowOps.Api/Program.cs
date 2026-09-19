@@ -17,9 +17,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<FlowOpsDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-builder.Services.AddScoped<IFlowOpsDbContext>(provider =>
-    provider.GetRequiredService<FlowOpsDbContext>());
-
+builder.Services.AddScoped<IWorkItemStore, WorkItemStore>();
 builder.Services.AddScoped<IWorkItemService, WorkItemService>();
 
 builder.Services.AddProblemDetails();
@@ -52,7 +50,11 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseAuthorization();
 app.MapControllers();
 
