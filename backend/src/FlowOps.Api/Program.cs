@@ -17,6 +17,16 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<FlowOpsDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddScoped<IWorkItemStore, WorkItemStore>();
 builder.Services.AddScoped<IWorkItemService, WorkItemService>();
 
@@ -55,6 +65,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
+app.UseCors();
 app.UseAuthorization();
 app.MapControllers();
 

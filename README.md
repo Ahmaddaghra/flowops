@@ -6,23 +6,36 @@ FlowOps helps small teams create, assign, prioritize, track, and audit work item
 
 ## Current Project Status
 
-**Phase 1 — Backend Foundation (Completed & Verified)**
+- **Phase 1 — Backend Foundation (Completed & Verified)**
+- **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
 
-The backend API baseline is fully implemented, configured with EF Core 10 + PostgreSQL 17, documented with Swagger/OpenAPI, covered by decoupled xUnit unit tests, and validated in CI.
+### Tech Stack Summary
 
-### Stack Summary
-
-- **Backend Framework:** ASP.NET Core 10 Web API (.NET 10.0.401 SDK / 10.0.12 runtime)
+#### Backend
+- **Framework:** ASP.NET Core 10 Web API (.NET 10.0.401 SDK / 10.0.12 runtime)
 - **Persistence:** Entity Framework Core 10.0.12 + PostgreSQL 17 (via `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3)
 - **API Tooling:** OpenAPI / Swagger UI (Swashbuckle 7.3.1, enabled in Development)
 - **Testing:** xUnit 2.9.3, Moq 4.20.72 (16 isolated unit tests, 0 EF Core test dependencies)
 - **CI / Automation:** GitHub Actions (`.github/workflows/backend-ci.yml`)
 - **Infrastructure:** Docker Compose (PostgreSQL 17-alpine with non-superuser role isolation)
 
+#### Frontend
+- **Framework:** React 19 (`react`, `react-dom`)
+- **Language:** TypeScript 5 (Strict compiler options, explicit typing throughout)
+- **Bundler & Tooling:** Vite 6 with `@vitejs/plugin-react`
+- **Routing:** React Router DOM 7
+- **Styling:** Tailwind CSS 3 with PostCSS and Autoprefixer
+- **Icons:** Lucide React (`lucide-react`)
+- **Class Merging:** `clsx` + `tailwind-merge`
+- **Linting & Code Quality:** ESLint 9 (`@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`)
+- **Formatting:** Prettier (`.prettierrc`)
+- **CI / Automation:** GitHub Actions (`.github/workflows/frontend-ci.yml`)
+
 ---
 
 ## Architectural Boundaries
 
+### Backend
 FlowOps strictly follows an inward-pointing dependency architecture:
 
 ```text
@@ -37,15 +50,37 @@ FlowOps.Api (Web API controllers, RFC 7807 ProblemDetails middleware, Swagger in
 FlowOps.UnitTests (References Domain and Application only; mocks persistence via Moq)
 ```
 
+### Frontend
+The frontend follows a modular, feature-based architecture with clean separation of concerns:
+
+```text
+src/
+├── app/               # Application bootstrap & router initialization
+├── components/        # Layout shells and reusable UI primitives (Design System)
+├── features/          # Domain-specific modules (Work Items table, card, badges, pages)
+├── lib/               # Typed API client, RFC 7807 error handling & utility functions
+├── pages/             # General application views (Settings, Dashboard preview, 404)
+├── routes/            # Route declarations and navigation mapping
+└── types/             # Domain and API response contracts
+```
+
 ---
 
 ## Continuous Integration
 
-FlowOps uses GitHub Actions for automated backend validation on every push and pull request targeting `main`:
-- **Restore:** Restores all solution dependencies (`dotnet restore`).
+FlowOps uses GitHub Actions for automated quality gates on every push and pull request targeting `main`:
+
+### Backend CI (`.github/workflows/backend-ci.yml`)
+- **Restore:** Restores solution dependencies (`dotnet restore`).
 - **Formatting Verification:** Enforces C# style rules and fails on violations (`dotnet format --verify-no-changes --no-restore`).
 - **Build:** Compiles all projects (`dotnet build --no-restore`).
 - **Unit Tests:** Executes isolated unit tests (`dotnet test --no-build`).
+
+### Frontend CI (`.github/workflows/frontend-ci.yml`)
+- **Install:** Installs deterministic dependencies via `npm ci`.
+- **Formatting Verification:** Verifies formatting against Prettier (`npm run format:check`).
+- **Linting:** Runs ESLint rules (`npm run lint`).
+- **Build:** Compiles TypeScript and builds production bundle (`npm run build`).
 
 ---
 
@@ -55,8 +90,8 @@ FlowOps uses GitHub Actions for automated backend validation on every push and p
   Contains production-safe baseline defaults only. Contains **no** database passwords, credentials, or local connection strings (`ConnectionStrings:DefaultConnection` is empty).
 - **`appsettings.Development.json` (Local Development):**
   Contains disposable container-only defaults for zero-friction local development. These are strictly local non-production values.
-- **`.env.example`:**
-  Provides the environment variable template for local container and connection configuration (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, etc.).
+- **Frontend `.env.example`:**
+  Defines `VITE_API_BASE_URL` (defaults to `/api/v1` with Vite dev proxy forwarding to `http://localhost:5055`).
 - **`.env`:**
   Ignored by git and untracked.
 
@@ -64,7 +99,7 @@ FlowOps uses GitHub Actions for automated backend validation on every push and p
 
 ## Implemented vs Planned Features
 
-### Implemented (Phase 1)
+### Implemented (Phase 1 & Phase 2)
 - [x] Layered ASP.NET Core backend solution (`Domain`, `Application`, `Infrastructure`, `Api`)
 - [x] Core `WorkItem` domain entity with rich validation and strict UTC invariants
 - [x] Use-case oriented persistence abstraction (`IWorkItemStore`) in Application layer
@@ -75,121 +110,93 @@ FlowOps uses GitHub Actions for automated backend validation on every push and p
 - [x] Interactive Swagger UI documentation at `/swagger` (Development environment)
 - [x] 16 decoupled xUnit unit tests covering domain invariants and application services
 - [x] GitHub Actions automated backend CI workflow (restore, format check, build, test)
-- [x] Local PostgreSQL environment via Docker Compose with `.env.example`
+- [x] React 19 + TypeScript 5 + Vite 6 frontend application shell
+- [x] Tailwind CSS restrained B2B operations design system & responsive layout (desktop & mobile)
+- [x] Reusable UI primitives (`Button`, `Badge`, `Card`, `Table`, `Skeleton`, `EmptyState`, `ErrorState`, `PageHeader`, `Input`, `Select`, `Modal`)
+- [x] Typed API client with automatic RFC 7807 `ProblemDetails` error extraction
+- [x] Work items list view (high-density table for desktop, cards for mobile)
+- [x] Read-only work item detail view with ID copying
+- [x] Create work item modal with live validation & backend error handling
+- [x] Resilient loading skeletons, empty states, and retryable error handling
+- [x] Frontend CI workflow (ESLint, Prettier, TypeScript compilation, Vite build)
 
 ### Planned (Future Phases)
-- [ ] React + TypeScript + Vite frontend shell (Phase 2)
-- [ ] Tailwind CSS design system & responsive layout (Phase 2)
-- [ ] Work item edit, status workflow, search & pagination (Phase 3)
-- [ ] JWT authentication, user roles & work item comments (Phase 4)
+- [ ] Work item edit, status transitions & workflow auditing (Phase 3)
+- [ ] Work item search, filtering & pagination (Phase 3)
+- [ ] JWT authentication, user identity & work item comments (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
 ---
 
 ## Local Setup & Quick Start
 
-The following canonical flow starts from the repository root:
-
 ### 1. Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/) (Version 10.0.401 or compatible)
+- [Node.js](https://nodejs.org/) (Version 20+ or 22 LTS recommended) and `npm`
 - [Docker Desktop](https://www.docker.com/) or local [PostgreSQL 17](https://www.postgresql.org/)
 
-### 2. Environment Configuration & Database Setup
+### 2. Database Setup
 
-Copy the example environment configuration:
+Copy the example environment configuration and start the containerized PostgreSQL 17 database:
 
 ```bash
 cp .env.example .env
-```
-
-Start the containerized PostgreSQL 17 database:
-
-```bash
 docker compose up -d
 ```
 
-*Note: The container uses an initialization script (`docker/postgres/init-db.sh`) ensuring the application database user (`flowops`) is NOT a PostgreSQL superuser and owns only its dedicated database.*
+### 3. Backend Setup & Run
 
-### 3. Restore, Build & Run Unit Tests
-
-From the repository root:
+Apply database migrations and launch the backend API:
 
 ```bash
-cd backend
-dotnet restore
-dotnet build
-dotnet test
-```
-
-### 4. Apply Database Migrations
-
-Apply pending migrations to the local database:
-
-```bash
+# Apply migrations
 dotnet ef database update \
-  --project src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj \
-  --startup-project src/FlowOps.Api/FlowOps.Api.csproj
-```
+  --project backend/src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj \
+  --startup-project backend/src/FlowOps.Api/FlowOps.Api.csproj
 
-*(If `dotnet-ef` is not in your shell PATH, ensure `export PATH="$HOME/.dotnet/tools:$PATH"` and set `export DOTNET_ROOT="/opt/homebrew/opt/dotnet/libexec"` if using Homebrew .NET).*
-
-### 5. Start API Server
-
-Run the API explicitly in the `Development` environment on the deterministic development port (`5055`):
-
-```bash
+# Run API server on port 5055
 ASPNETCORE_ENVIRONMENT=Development \
 dotnet run \
-  --project src/FlowOps.Api/FlowOps.Api.csproj \
+  --project backend/src/FlowOps.Api/FlowOps.Api.csproj \
   --no-launch-profile \
   --urls http://localhost:5055
 ```
 
 The API will be available at:
-- **Base API:** `http://localhost:5055/api/v1`
-- **Swagger UI:** `http://localhost:5055/swagger`
-- **OpenAPI JSON:** `http://localhost:5055/swagger/v1/swagger.json`
 - **Health Check:** `http://localhost:5055/api/v1/health`
+- **Swagger UI:** `http://localhost:5055/swagger`
 
----
+### 4. Frontend Setup & Run
 
-## Example API Usage (cURL)
+In a separate terminal:
 
-All examples target the canonical local development URL `http://localhost:5055`:
-
-### Health Check
 ```bash
-curl -i http://localhost:5055/api/v1/health
+cd frontend
+npm install
+npm run dev
 ```
 
-### Create Work Item
-```bash
-curl -i -X POST http://localhost:5055/api/v1/work-items \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Configure production monitoring",
-    "description": "Set up alerts for API error rates and latency",
-    "priority": "High",
-    "assigneeName": "Ahmad Daghra"
-  }'
-```
+The web application will be running at `http://localhost:5173`.
+All requests to `/api/v1` are automatically proxied to the backend on `http://localhost:5055`.
 
-### List All Work Items
-```bash
-curl -i http://localhost:5055/api/v1/work-items
-```
+### 5. Frontend Scripts
 
-### Get Work Item by ID
 ```bash
-curl -i http://localhost:5055/api/v1/work-items/{id}
-```
+# Run development server
+npm run dev
 
-### Error Handling Verification (Invalid Priority -> 400 Bad Request)
-```bash
-curl -i -X POST http://localhost:5055/api/v1/work-items \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Test Title", "priority": "SuperUrgent"}'
+# Run TypeScript type check and build production bundle
+npm run build
+
+# Run ESLint check
+npm run lint
+
+# Check formatting with Prettier
+npm run format:check
+
+# Auto-format with Prettier
+npm run format
 ```
 
 ---
@@ -200,7 +207,8 @@ curl -i -X POST http://localhost:5055/api/v1/work-items \
 flowops/
 ├── .github/
 │   └── workflows/
-│       └── backend-ci.yml           # GitHub Actions CI workflow
+│       ├── backend-ci.yml           # GitHub Actions backend CI workflow
+│       └── frontend-ci.yml          # GitHub Actions frontend CI workflow
 ├── backend/                         # ASP.NET Core 10 Web API
 │   ├── FlowOps.sln                  # Solution file
 │   ├── src/
@@ -210,7 +218,18 @@ flowops/
 │   │   └── FlowOps.Api/             # Controllers, ProblemDetails middleware & Swagger
 │   └── tests/
 │       └── FlowOps.UnitTests/       # xUnit unit tests (isolated, Moq-based)
-├── frontend/                        # React client (Phase 2+)
+├── frontend/                        # React 19 + TypeScript 5 + Vite 6 client
+│   ├── src/
+│   │   ├── app/                     # App entry and router initialization
+│   │   ├── components/              # Layout and design system primitives
+│   │   ├── features/                # Feature-sliced modules (work-items)
+│   │   ├── lib/                     # Typed API client & utilities
+│   │   ├── pages/                   # Application pages
+│   │   ├── routes/                  # Route configuration
+│   │   └── types/                   # TypeScript interfaces & API errors
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── vite.config.ts
 ├── docker/
 │   └── postgres/
 │       └── init-db.sh               # Non-superuser role initialization script
@@ -220,7 +239,8 @@ flowops/
 │   ├── DATA_MODEL.md                # Initial entities and relationships
 │   ├── API_DESIGN.md                # REST conventions and endpoint plan
 │   └── phases/
-│       └── phase-1-backend-foundation.md # Phase 1 technical remediation documentation
+│       ├── phase-1-backend-foundation.md # Phase 1 documentation
+│       └── phase-2-frontend-foundation.md # Phase 2 documentation
 ├── docker-compose.yml               # Hardened local PostgreSQL container configuration
 ├── .env.example                     # Local development environment template
 ├── CONTRIBUTING.md
