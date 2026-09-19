@@ -3,15 +3,18 @@ services:
     image: postgres:17-alpine
     container_name: flowops-db
     environment:
-      POSTGRES_DB: flowops
-      POSTGRES_USER: flowops
-      POSTGRES_PASSWORD: flowops_dev_pass_123
+      POSTGRES_DB: ${POSTGRES_DB:-flowops}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres_dev_password}
+      APP_DB_USER: ${POSTGRES_USER:-flowops}
+      APP_DB_PASSWORD: ${POSTGRES_PASSWORD:-flowops_dev_pass_123}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flowops -d flowops"]
+      test: ["CMD-SHELL", "pg_isready -U ${APP_DB_USER:-flowops} -d ${POSTGRES_DB:-flowops}"]
       interval: 5s
       timeout: 5s
       retries: 5
