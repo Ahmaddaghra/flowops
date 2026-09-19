@@ -1,3 +1,4 @@
+using FlowOps.Api.Middleware;
 using FlowOps.Application.Interfaces;
 using FlowOps.Application.Services;
 using FlowOps.Infrastructure.Persistence;
@@ -21,6 +22,9 @@ builder.Services.AddScoped<IFlowOpsDbContext>(provider =>
 
 builder.Services.AddScoped<IWorkItemService, WorkItemService>();
 
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -34,6 +38,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
