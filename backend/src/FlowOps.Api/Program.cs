@@ -40,7 +40,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("EnableSwagger", false))
+if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
@@ -50,7 +50,7 @@ if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Ena
     });
 }
 
-if (builder.Configuration.GetValue<bool>("UseHttpsRedirection", false))
+if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }

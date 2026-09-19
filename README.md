@@ -14,7 +14,7 @@ The backend API baseline is fully implemented, configured with EF Core 10 + Post
 
 - **Backend Framework:** ASP.NET Core 10 Web API (.NET 10.0.401 SDK / 10.0.12 runtime)
 - **Persistence:** Entity Framework Core 10.0.12 + PostgreSQL 17 (via `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3)
-- **API Tooling:** OpenAPI / Swagger UI (Swashbuckle 7.3.1)
+- **API Tooling:** OpenAPI / Swagger UI (Swashbuckle 7.3.1, enabled in Development)
 - **Testing:** xUnit 2.9.3, Moq 4.20.72 (16 isolated unit tests, 0 EF Core test dependencies)
 - **Infrastructure:** Docker Compose (PostgreSQL 17-alpine with non-superuser role isolation)
 
@@ -31,10 +31,23 @@ FlowOps.Application (Depends on Domain only; defines IWorkItemStore abstraction;
       ↑
 FlowOps.Infrastructure (Implements IWorkItemStore via EF Core 10 & PostgreSQL 17)
       ↑
-FlowOps.Api (Web API controllers, RFC 7807 ProblemDetails middleware, Swagger)
+FlowOps.Api (Web API controllers, RFC 7807 ProblemDetails middleware, Swagger in Development)
 
 FlowOps.UnitTests (References Domain and Application only; mocks persistence via Moq)
 ```
+
+---
+
+## Configuration & Secret Hygiene Model
+
+- **`appsettings.json` (Production Baseline):**
+  Contains production-safe baseline defaults only. Contains **no** database passwords, credentials, or local connection strings (`ConnectionStrings:DefaultConnection` is empty).
+- **`appsettings.Development.json` (Local Development):**
+  Contains disposable container-only defaults for zero-friction local development. These are strictly local non-production values.
+- **`.env.example`:**
+  Provides the environment variable template for local container and connection configuration (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, etc.).
+- **`.env`:**
+  Ignored by git and untracked.
 
 ---
 
@@ -48,7 +61,7 @@ FlowOps.UnitTests (References Domain and Application only; mocks persistence via
 - [x] Hardened PostgreSQL role configuration (non-superuser application user)
 - [x] Versioned REST API (`/api/v1/health`, `/api/v1/work-items`)
 - [x] Centralized RFC 7807 `ProblemDetails` exception handling with no stack trace leakage
-- [x] Interactive Swagger UI documentation at `/swagger`
+- [x] Interactive Swagger UI documentation at `/swagger` (Development environment)
 - [x] 16 decoupled xUnit unit tests covering domain invariants and application services
 - [x] Local PostgreSQL environment via Docker Compose with `.env.example`
 
@@ -111,9 +124,10 @@ dotnet ef database update \
 
 ### 5. Start API Server
 
-Run the API on the deterministic development port (`5055`):
+Run the API explicitly in the `Development` environment on the deterministic development port (`5055`):
 
 ```bash
+ASPNETCORE_ENVIRONMENT=Development \
 dotnet run \
   --project src/FlowOps.Api/FlowOps.Api.csproj \
   --no-launch-profile \

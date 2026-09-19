@@ -2,7 +2,7 @@
 
 ## Objective
 
-Establish a clean, robust, and architecturally decoupled ASP.NET Core backend foundation for FlowOps. This document reflects the completed remediation pass resolving architectural dependency leaks, database security hygiene, test isolation, package version alignment, and deterministic local developer experience.
+Establish a clean, robust, and architecturally decoupled ASP.NET Core backend foundation for FlowOps. This document reflects the completed remediation pass resolving architectural dependency leaks, database security hygiene, test isolation, package version alignment, configuration boundaries, and deterministic local developer experience.
 
 ---
 
@@ -20,11 +20,12 @@ Establish a clean, robust, and architecturally decoupled ASP.NET Core backend fo
    - Replaced in-memory database test fixtures in `WorkItemServiceTests` with pure `Moq` doubles against `IWorkItemStore`.
    - Test execution time reduced by >80% while retaining and improving coverage (16 tests, 0 failures).
 
-3. **Database Security & Local Hygiene:**
+3. **Database Security & Configuration Hygiene:**
    - Hardened PostgreSQL container and local environment: the FlowOps application role (`flowops`) is explicitly NOT a PostgreSQL superuser (`rolsuper = false`, `rolcreatedb = false`, `rolcreaterole = false`).
-   - Created `docker/postgres/init-db.sh` to initialize the database, create the unprivileged application role, and grant ownership of the `flowops` database and `public` schema.
+   - Created `docker/postgres/init-db.sh` using safe psql variables and native PostgreSQL `format()` with `%I` (identifier) and `%L` (literal) escaping to initialize the unprivileged application role safely.
+   - Cleaned `backend/src/FlowOps.Api/appsettings.json` to be a production-safe baseline with **no credentials** and an empty `DefaultConnection` string.
+   - Retained disposable local-only container defaults strictly in `backend/src/FlowOps.Api/appsettings.Development.json`.
    - Provided `.env.example` documenting all configuration parameters (`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_SUPERUSER`, `POSTGRES_SUPERUSER_PASSWORD`, `POSTGRES_PORT`, `ConnectionStrings__DefaultConnection`). Confirmed `.env` is gitignored.
-   - Cleaned `appsettings.json` to avoid committing reusable credentials.
 
 4. **Aligned .NET 10 / EF Core 10 Package Stack:**
    - Aligned all EF Core packages to stable, compatible versions matching .NET 10:
@@ -32,13 +33,13 @@ Establish a clean, robust, and architecturally decoupled ASP.NET Core backend fo
      - `Microsoft.EntityFrameworkCore.Design`: 10.0.12
      - `Npgsql.EntityFrameworkCore.PostgreSQL`: 10.0.3
      - `Microsoft.Extensions.Logging.Abstractions`: 10.0.0
-     - `Swashbuckle.AspNetCore`: 7.3.1
+     - `Swashbuckle.AspNetCore`: 7.3.1 (enabled when running in Development)
    - Zero compilation warnings, zero package downgrade or compatibility warnings.
 
-5. **Deterministic Local Run Experience:**
+5. **Deterministic Local Run Experience & Environment Scoping:**
    - Standardized application URL to `http://localhost:5055`.
-   - Updated `launchSettings.json`, `.http` files, and `README.md` curl examples to consistently target `http://localhost:5055`.
-   - Clean canonical run sequence starting strictly from the repository root.
+   - Documented explicit `ASPNETCORE_ENVIRONMENT=Development` run command to cleanly activate development configuration without depending on hidden ambient shell state.
+   - Guarded Swagger to activate strictly in `Development` (`app.Environment.IsDevelopment()`), removing ad-hoc configuration flags.
 
 ---
 
@@ -104,7 +105,7 @@ Project 'FlowOps.UnitTests' has the following package references
 | EF Design Tools | Microsoft.EntityFrameworkCore.Design | 10.0.12 | Migrations & scaffolding |
 | Database Driver | Npgsql.EntityFrameworkCore.PostgreSQL | 10.0.3 | PostgreSQL EF Core provider |
 | Database Engine | PostgreSQL | 17 (postgres:17-alpine) | Persistent relational store |
-| API Docs | Swashbuckle.AspNetCore | 7.3.1 | OpenAPI specification & Swagger UI |
+| API Docs | Swashbuckle.AspNetCore | 7.3.1 | OpenAPI specification & Swagger UI (Development only) |
 | Test Framework | xUnit | 2.9.3 | Unit test runner |
 | Mocking Library | Moq | 4.20.72 | Persistence abstraction doubles |
 
@@ -145,8 +146,8 @@ All endpoints verified against running instance at `http://localhost:5055`:
 | `GET` | `/api/v1/work-items/{nonexistent}` | Guid not found | `404 Not Found` | Verified structured RFC 7807 ProblemDetails |
 | `POST` | `/api/v1/work-items` (invalid title) | Empty title validation error | `400 Bad Request` | Verified structured ValidationProblemDetails |
 | `POST` | `/api/v1/work-items` (invalid priority) | Unrecognized enum string | `400 Bad Request` | Verified structured ProblemDetails (no stack trace) |
-| `GET` | `/swagger` | Swagger UI HTML dashboard | `200 OK` | Verified interactive docs load |
-| `GET` | `/swagger/v1/swagger.json` | OpenAPI v1 specification | `200 OK` | Verified valid OpenAPI 3.0 schema |
+| `GET` | `/swagger/index.html` | Swagger UI HTML dashboard | `200 OK` | Verified interactive docs load in Development |
+| `GET` | `/swagger/v1/swagger.json` | OpenAPI v1 specification | `200 OK` | Verified valid OpenAPI 3.0 schema in Development |
 
 ---
 
@@ -155,7 +156,7 @@ All endpoints verified against running instance at `http://localhost:5055`:
 Executed via `dotnet test backend/FlowOps.sln`:
 
 ```text
-Passed!  - Failed: 0, Passed: 16, Skipped: 0, Total: 16, Duration: 44 ms - FlowOps.UnitTests.dll (net10.0)
+Passed!  - Failed: 0, Passed: 16, Skipped: 0, Total: 16, Duration: 45 ms - FlowOps.UnitTests.dll (net10.0)
 ```
 
 ### Coverage Breakdown
@@ -181,7 +182,8 @@ dotnet ef database update \
   --project src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj \
   --startup-project src/FlowOps.Api/FlowOps.Api.csproj
 
-# 4. Run API on port 5055
+# 4. Run API explicitly in Development on port 5055
+ASPNETCORE_ENVIRONMENT=Development \
 dotnet run \
   --project src/FlowOps.Api/FlowOps.Api.csproj \
   --no-launch-profile \
