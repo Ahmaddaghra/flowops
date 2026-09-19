@@ -6,9 +6,9 @@ FlowOps helps small teams create, assign, prioritize, track, and audit work item
 
 ## Current Project Status
 
-**Phase 1 — Backend Foundation (Remediated & Verified)**
+**Phase 1 — Backend Foundation (Completed & Verified)**
 
-The backend API baseline is fully implemented, configured with EF Core 10 + PostgreSQL 17, documented with Swagger/OpenAPI, and covered by decoupled xUnit unit tests.
+The backend API baseline is fully implemented, configured with EF Core 10 + PostgreSQL 17, documented with Swagger/OpenAPI, covered by decoupled xUnit unit tests, and validated in CI.
 
 ### Stack Summary
 
@@ -16,6 +16,7 @@ The backend API baseline is fully implemented, configured with EF Core 10 + Post
 - **Persistence:** Entity Framework Core 10.0.12 + PostgreSQL 17 (via `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3)
 - **API Tooling:** OpenAPI / Swagger UI (Swashbuckle 7.3.1, enabled in Development)
 - **Testing:** xUnit 2.9.3, Moq 4.20.72 (16 isolated unit tests, 0 EF Core test dependencies)
+- **CI / Automation:** GitHub Actions (`.github/workflows/backend-ci.yml`)
 - **Infrastructure:** Docker Compose (PostgreSQL 17-alpine with non-superuser role isolation)
 
 ---
@@ -35,6 +36,16 @@ FlowOps.Api (Web API controllers, RFC 7807 ProblemDetails middleware, Swagger in
 
 FlowOps.UnitTests (References Domain and Application only; mocks persistence via Moq)
 ```
+
+---
+
+## Continuous Integration
+
+FlowOps uses GitHub Actions for automated backend validation on every push and pull request targeting `main`:
+- **Restore:** Restores all solution dependencies (`dotnet restore`).
+- **Formatting Verification:** Enforces C# style rules and fails on violations (`dotnet format --verify-no-changes --no-restore`).
+- **Build:** Compiles all projects (`dotnet build --no-restore`).
+- **Unit Tests:** Executes isolated unit tests (`dotnet test --no-build`).
 
 ---
 
@@ -63,6 +74,7 @@ FlowOps.UnitTests (References Domain and Application only; mocks persistence via
 - [x] Centralized RFC 7807 `ProblemDetails` exception handling with no stack trace leakage
 - [x] Interactive Swagger UI documentation at `/swagger` (Development environment)
 - [x] 16 decoupled xUnit unit tests covering domain invariants and application services
+- [x] GitHub Actions automated backend CI workflow (restore, format check, build, test)
 - [x] Local PostgreSQL environment via Docker Compose with `.env.example`
 
 ### Planned (Future Phases)
@@ -186,6 +198,9 @@ curl -i -X POST http://localhost:5055/api/v1/work-items \
 
 ```text
 flowops/
+├── .github/
+│   └── workflows/
+│       └── backend-ci.yml           # GitHub Actions CI workflow
 ├── backend/                         # ASP.NET Core 10 Web API
 │   ├── FlowOps.sln                  # Solution file
 │   ├── src/
