@@ -2,7 +2,7 @@
 
 ## Objective
 
-Establish a clean, robust, and architecturally decoupled ASP.NET Core backend foundation for FlowOps. This document reflects the completed remediation pass resolving architectural dependency leaks, database security hygiene, test isolation, package version alignment, configuration boundaries, and deterministic local developer experience.
+Establish a clean, robust, and architecturally decoupled ASP.NET Core backend foundation for FlowOps. This document reflects the completed remediation pass resolving architectural dependency leaks, database security hygiene, test isolation, package version alignment, configuration boundaries, continuous integration, and deterministic local developer experience.
 
 ---
 
@@ -40,6 +40,11 @@ Establish a clean, robust, and architecturally decoupled ASP.NET Core backend fo
    - Standardized application URL to `http://localhost:5055`.
    - Documented explicit `ASPNETCORE_ENVIRONMENT=Development` run command to cleanly activate development configuration without depending on hidden ambient shell state.
    - Guarded Swagger to activate strictly in `Development` (`app.Environment.IsDevelopment()`), removing ad-hoc configuration flags.
+
+6. **Automated Backend Continuous Integration:**
+   - Implemented GitHub Actions CI workflow (`.github/workflows/backend-ci.yml`) triggered on pull requests and pushes to `main`.
+   - Pipeline stages: dependency restore, strict code formatting verification (`dotnet format --verify-no-changes --no-restore`), build (`--no-restore`), and test execution (`--no-build`).
+   - Pipeline executes in isolation without requiring external database dependencies.
 
 ---
 
@@ -108,6 +113,7 @@ Project 'FlowOps.UnitTests' has the following package references
 | API Docs | Swashbuckle.AspNetCore | 7.3.1 | OpenAPI specification & Swagger UI (Development only) |
 | Test Framework | xUnit | 2.9.3 | Unit test runner |
 | Mocking Library | Moq | 4.20.72 | Persistence abstraction doubles |
+| CI Engine | GitHub Actions | Ubuntu Latest / .NET 10.0.x | Automated build, formatting, and tests |
 
 ---
 
@@ -204,5 +210,5 @@ The following features remain planned for upcoming phases and are deliberately e
 
 ## Final Review Verdict
 
-**All Phase 1 senior engineer remediation criteria and gates have passed.**
-The branch `feature/phase-1-backend-foundation` is clean, robust, fully tested, and ready for pull request review.
+**All Phase 1 senior engineer remediation criteria, release gates, and automated CI validations have passed.**
+The branch `chore/phase-1-backend-ci` introduces the necessary workflow automation and is ready for pull request review.
