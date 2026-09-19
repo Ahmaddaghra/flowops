@@ -1,6 +1,25 @@
-@FlowOps.Api_HostAddress = http://localhost:5001
+@FlowOps.Api_HostAddress = http://localhost:5055
 
-GET {{FlowOps.Api_HostAddress}}/weatherforecast/
+### Health Check
+GET {{FlowOps.Api_HostAddress}}/api/v1/health
 Accept: application/json
 
-###
+### Get All Work Items
+GET {{FlowOps.Api_HostAddress}}/api/v1/work-items
+Accept: application/json
+
+### Create Work Item
+POST {{FlowOps.Api_HostAddress}}/api/v1/work-items
+Content-Type: application/json
+
+{
+  "title": "Configure production monitoring",
+  "description": "Set up alerts for API error rates",
+  "priority": "High",
+  "assigneeName": "Ahmad Daghra"
+}
+
+### Get Work Item by ID
+GET {{FlowOps.Api_HostAddress}}/api/v1/work-items/00000000-0000-0000-0000-000000000000
+Accept: application/json
+
