@@ -1,10 +1,13 @@
 using FlowOps.Application.DTOs;
 using FlowOps.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using FlowOps.Application.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FlowOps.Api.Controllers.v1;
 
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Member)]
 [ApiController]
 [Route("api/v1/work-items")]
 public class WorkItemsController : ControllerBase
@@ -70,7 +73,7 @@ public class WorkItemsController : ControllerBase
         return item is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(item);
     }
 
-    /// <summary>Assigns a display name, or unassigns when assigneeName is null or empty.</summary>
+    /// <summary>Assigns an active user, or unassigns when assigneeUserId is null.</summary>
     [HttpPost("{id:guid}/assign")]
     [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]

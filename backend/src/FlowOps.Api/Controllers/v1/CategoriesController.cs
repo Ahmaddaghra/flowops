@@ -1,10 +1,13 @@
 using FlowOps.Application.DTOs;
 using FlowOps.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using FlowOps.Application.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FlowOps.Api.Controllers.v1;
 
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Member)]
 [ApiController]
 [Route("api/v1/categories")]
 public class CategoriesController : ControllerBase

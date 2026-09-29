@@ -8,4 +8,6 @@ public class ActivityEventResponse
     public string Description { get; init; } = string.Empty;
     public DateTime CreatedAtUtc { get; init; }
     public Guid? ActorUserId { get; init; }
+    public UserSummaryResponse? Actor { get; init; }
+    public string ActorDisplayName => Actor?.DisplayName ?? "System";
 }

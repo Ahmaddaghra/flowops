@@ -26,14 +26,17 @@ public class WorkItemStore : IWorkItemStore
             items = items.Where(x =>
                 EF.Functions.ILike(x.Title, search, "\\") ||
                 (x.Description != null && EF.Functions.ILike(x.Description, search, "\\")) ||
-                (x.AssigneeName != null && EF.Functions.ILike(x.AssigneeName, search, "\\")));
+                (x.AssigneeUserId == null && x.AssigneeName != null && EF.Functions.ILike(x.AssigneeName, search, "\\")) ||
+                _dbContext.Users.Any(user => user.Id == x.AssigneeUserId && EF.Functions.ILike(user.DisplayName, search, "\\")));
         }
 
         if (query.Status is WorkItemStatus status) items = items.Where(x => x.Status == status);
         if (query.Priority is WorkItemPriority priority) items = items.Where(x => x.Priority == priority);
         if (query.CategoryId is Guid categoryId) items = items.Where(x => x.CategoryId == categoryId);
         if (!string.IsNullOrWhiteSpace(query.Assignee))
-            items = items.Where(x => x.AssigneeName != null && EF.Functions.ILike(x.AssigneeName, $"%{EscapeLike(query.Assignee)}%", "\\"));
+            items = items.Where(x =>
+                (x.AssigneeUserId == null && x.AssigneeName != null && EF.Functions.ILike(x.AssigneeName, $"%{EscapeLike(query.Assignee)}%", "\\")) ||
+                _dbContext.Users.Any(user => user.Id == x.AssigneeUserId && EF.Functions.ILike(user.DisplayName, $"%{EscapeLike(query.Assignee)}%", "\\")));
 
         var totalItems = await items.CountAsync(cancellationToken);
         var pageItems = await ApplyOrdering(items, query.Sort, query.Direction)

@@ -1,4 +1,5 @@
 using FlowOps.Application.DTOs;
+using FlowOps.Application.Authorization;
 using FlowOps.Application.Exceptions;
 using FlowOps.Application.Interfaces;
 using FlowOps.Domain.Entities;
@@ -11,22 +12,29 @@ public class WorkItemService : IWorkItemService
 {
     private readonly IWorkItemStore _store;
     private readonly ILogger<WorkItemService> _logger;
+    private readonly IUserDirectory _users;
+    private readonly WorkItemAuthorization _authorization;
 
-    public WorkItemService(IWorkItemStore store, ILogger<WorkItemService> logger)
+    public WorkItemService(IWorkItemStore store, ILogger<WorkItemService> logger, ICurrentUser currentUser, IUserDirectory users)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(currentUser);
+        _users = users ?? throw new ArgumentNullException(nameof(users));
+        _authorization = new WorkItemAuthorization(currentUser);
     }
 
     public async Task<PagedResult<WorkItemResponse>> ListAsync(WorkItemQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        _authorization.RequireUser();
         ValidateQuery(query);
 
         var page = await _store.QueryAsync(query, cancellationToken);
+        var users = await GetItemUsersAsync(page.Items, cancellationToken);
         return new PagedResult<WorkItemResponse>
         {
-            Items = page.Items.Select(item => WorkItemResponse.FromEntity(item)).ToList(),
+            Items = page.Items.Select(item => MapResponse(item, users)).ToList(),
             Page = page.Page,
             PageSize = page.PageSize,
             TotalItems = page.TotalItems,
@@ -36,13 +44,17 @@ public class WorkItemService : IWorkItemService
 
     public async Task<WorkItemResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        _authorization.RequireUser();
         var item = await _store.GetByIdAsync(id, cancellationToken);
-        return item is null ? null : WorkItemResponse.FromEntity(item);
+        return item is null ? null : await MapResponseAsync(item, cancellationToken);
     }
 
     public async Task<WorkItemResponse> CreateAsync(CreateWorkItemRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var userId = _authorization.RequireUser();
+        _authorization.RequireInitialAssignment(request.AssigneeUserId);
+        await ValidateAssigneeAsync(request.AssigneeUserId, cancellationToken);
         var priority = ParsePriority(request.Priority, nameof(request.Priority));
         Category? category = null;
         if (request.CategoryId is Guid categoryId)
@@ -54,25 +66,28 @@ public class WorkItemService : IWorkItemService
             title: request.Title,
             description: request.Description,
             priority: priority,
-            assigneeName: request.AssigneeName,
-            categoryId: request.CategoryId);
+            categoryId: request.CategoryId,
+            createdByUserId: userId,
+            assigneeUserId: request.AssigneeUserId);
 
         await _store.AddAsync(item, cancellationToken);
         await _store.AddActivityEventAsync(
-            new ActivityEvent(item.Id, ActivityEventType.Created, "Work item created", item.CreatedAtUtc),
+            new ActivityEvent(item.Id, ActivityEventType.Created, "Work item created", item.CreatedAtUtc, userId),
             cancellationToken);
         await _store.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Created work item {WorkItemId}", item.Id);
-        return WorkItemResponse.FromEntity(item, category?.Name);
+        return await MapResponseAsync(item, cancellationToken, category?.Name);
     }
 
     public async Task<WorkItemResponse?> UpdateAsync(Guid id, UpdateWorkItemRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        _authorization.RequireUser();
         var item = await _store.GetByIdForUpdateAsync(id, cancellationToken);
         if (item is null) return null;
 
+        _authorization.RequireEdit(item);
         ValidateExpectedVersion(item, request.ExpectedVersion);
         var priority = ParsePriority(request.Priority, nameof(request.Priority));
         var previousCategoryName = item.Category?.Name;
@@ -109,15 +124,17 @@ public class WorkItemService : IWorkItemService
 
         if (changed) await _store.SaveChangesAsync(cancellationToken);
 
-        return WorkItemResponse.FromEntity(item, categoryName);
+        return await MapResponseAsync(item, cancellationToken, categoryName);
     }
 
     public async Task<WorkItemResponse?> ChangeStatusAsync(Guid id, ChangeWorkItemStatusRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        _authorization.RequireUser();
         var item = await _store.GetByIdForUpdateAsync(id, cancellationToken);
         if (item is null) return null;
 
+        _authorization.RequireEdit(item);
         ValidateExpectedVersion(item, request.ExpectedVersion);
         var status = ParseStatus(request.Status, nameof(request.Status));
         var previous = item.Status;
@@ -127,19 +144,25 @@ public class WorkItemService : IWorkItemService
             await _store.SaveChangesAsync(cancellationToken);
         }
 
-        return WorkItemResponse.FromEntity(item);
+        return await MapResponseAsync(item, cancellationToken);
     }
 
     public async Task<WorkItemResponse?> AssignAsync(Guid id, AssignWorkItemRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        _authorization.RequireUser();
         var item = await _store.GetByIdForUpdateAsync(id, cancellationToken);
         if (item is null) return null;
 
+        _authorization.RequireAssignment(item, request.AssigneeUserId);
         ValidateExpectedVersion(item, request.ExpectedVersion);
-        var previous = item.AssigneeName;
-        var next = string.IsNullOrWhiteSpace(request.AssigneeName) ? null : request.AssigneeName.Trim();
-        if (item.Assign(request.AssigneeName))
+        await ValidateAssigneeAsync(request.AssigneeUserId, cancellationToken);
+        var users = await _users.GetByIdsAsync(
+            new[] { item.AssigneeUserId, request.AssigneeUserId }.OfType<Guid>(), cancellationToken);
+        var previous = item.AssigneeUserId is Guid previousId && users.TryGetValue(previousId, out var oldUser)
+            ? oldUser.DisplayName : null;
+        var next = request.AssigneeUserId is Guid nextId ? users[nextId].DisplayName : null;
+        if (item.AssignToUser(request.AssigneeUserId))
         {
             var description = next is null
                 ? "Work item unassigned"
@@ -148,14 +171,16 @@ public class WorkItemService : IWorkItemService
             await _store.SaveChangesAsync(cancellationToken);
         }
 
-        return WorkItemResponse.FromEntity(item);
+        return await MapResponseAsync(item, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ActivityEventResponse>?> GetActivityAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        _authorization.RequireUser();
         if (await _store.GetByIdAsync(id, cancellationToken) is null) return null;
 
         var events = await _store.GetActivityAsync(id, cancellationToken);
+        var users = await _users.GetByIdsAsync(events.Select(x => x.ActorUserId).OfType<Guid>(), cancellationToken);
         return events.Select(activity => new ActivityEventResponse
         {
             Id = activity.Id,
@@ -163,12 +188,14 @@ public class WorkItemService : IWorkItemService
             EventType = activity.EventType.ToString(),
             Description = activity.Description,
             CreatedAtUtc = activity.CreatedAtUtc,
-            ActorUserId = activity.ActorUserId
+            ActorUserId = activity.ActorUserId,
+            Actor = activity.ActorUserId is Guid actorId && users.TryGetValue(actorId, out var actor) ? actor : null
         }).ToList();
     }
 
     public async Task<IReadOnlyList<CategoryResponse>> GetCategoriesAsync(CancellationToken cancellationToken = default)
     {
+        _authorization.RequireUser();
         var categories = await _store.ListActiveCategoriesAsync(cancellationToken);
         return categories.Select(category => new CategoryResponse
         {
@@ -187,7 +214,31 @@ public class WorkItemService : IWorkItemService
     }
 
     private Task AddActivityAsync(Guid workItemId, ActivityEventType type, string description, CancellationToken cancellationToken) =>
-        _store.AddActivityEventAsync(new ActivityEvent(workItemId, type, description), cancellationToken);
+        _store.AddActivityEventAsync(new ActivityEvent(workItemId, type, description, actorUserId: _authorization.RequireUser()), cancellationToken);
+
+    private async Task ValidateAssigneeAsync(Guid? userId, CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty) throw new ArgumentException("AssigneeUserId cannot be empty.", "assigneeUserId");
+        if (userId is Guid id && !await _users.ExistsActiveAsync(id, cancellationToken))
+            throw new KeyNotFoundException("The active assignee user was not found.");
+    }
+
+    private Task<IReadOnlyDictionary<Guid, UserSummaryResponse>> GetItemUsersAsync(
+        IEnumerable<WorkItem> items, CancellationToken cancellationToken) =>
+        _users.GetByIdsAsync(items.SelectMany(x => new[] { x.CreatedByUserId, x.AssigneeUserId }).OfType<Guid>(), cancellationToken);
+
+    private async Task<WorkItemResponse> MapResponseAsync(WorkItem item, CancellationToken cancellationToken, string? categoryName = null) =>
+        MapResponse(item, await GetItemUsersAsync([item], cancellationToken), categoryName);
+
+    private WorkItemResponse MapResponse(WorkItem item, IReadOnlyDictionary<Guid, UserSummaryResponse> users, string? categoryName = null)
+    {
+        var response = WorkItemResponse.FromEntity(item, categoryName);
+        response.CreatedBy = item.CreatedByUserId is Guid creatorId && users.TryGetValue(creatorId, out var creator) ? creator : null;
+        response.Assignee = item.AssigneeUserId is Guid assigneeId && users.TryGetValue(assigneeId, out var assignee) ? assignee : null;
+        response.AssigneeName = response.Assignee?.DisplayName ?? item.AssigneeName;
+        response.Permissions = _authorization.GetPermissions(item);
+        return response;
+    }
 
     private static void ValidateExpectedVersion(WorkItem item, long expectedVersion)
     {

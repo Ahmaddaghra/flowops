@@ -1,9 +1,11 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
 
 namespace FlowOps.Application.DTOs;
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public class CreateWorkItemRequest
 {
     [Required(ErrorMessage = "Title is required.")]
@@ -18,6 +20,5 @@ public class CreateWorkItemRequest
 
     public Guid? CategoryId { get; set; }
 
-    [StringLength(WorkItem.MaxAssigneeNameLength, ErrorMessage = "AssigneeName cannot exceed 100 characters.")]
-    public string? AssigneeName { get; set; }
+    public Guid? AssigneeUserId { get; set; }
 }

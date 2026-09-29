@@ -1,4 +1,5 @@
 using FlowOps.Domain.Entities;
+using FlowOps.Infrastructure.Identity;
 using FlowOps.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -12,6 +13,11 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.ToTable("WorkItems");
 
         builder.HasKey(x => x.Id);
+        builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.CreatedByUserId);
+        builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssigneeUserId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.AssigneeUserId);
+
 
         builder.Property(x => x.Version)
             .HasDefaultValue(1L)

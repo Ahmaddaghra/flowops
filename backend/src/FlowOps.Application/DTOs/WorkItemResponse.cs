@@ -13,6 +13,12 @@ public class WorkItemResponse
     public string Priority { get; set; } = string.Empty;
     public Guid? CategoryId { get; set; }
     public string? CategoryName { get; set; }
+    public Guid? CreatedByUserId { get; set; }
+    public Guid? AssigneeUserId { get; set; }
+    public UserSummaryResponse? CreatedBy { get; set; }
+    public UserSummaryResponse? Assignee { get; set; }
+    public WorkItemPermissions? Permissions { get; set; }
+    public string? LegacyAssigneeName { get; set; }
     public string? AssigneeName { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
@@ -29,6 +35,9 @@ public class WorkItemResponse
             Priority = entity.Priority.ToString(),
             CategoryId = entity.CategoryId,
             CategoryName = categoryName ?? entity.Category?.Name,
+            CreatedByUserId = entity.CreatedByUserId,
+            AssigneeUserId = entity.AssigneeUserId,
+            LegacyAssigneeName = entity.AssigneeName,
             AssigneeName = entity.AssigneeName,
             CreatedAtUtc = entity.CreatedAtUtc,
             UpdatedAtUtc = entity.UpdatedAtUtc

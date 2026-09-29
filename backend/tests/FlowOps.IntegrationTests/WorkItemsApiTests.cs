@@ -2,6 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FlowOps.Application.DTOs;
+using FlowOps.Application.Authorization;
+using FlowOps.Application.Services;
+using FlowOps.Infrastructure.Identity;
+using System.Net.Http.Headers;
+using Microsoft.Extensions.Logging.Abstractions;
 using FlowOps.Application.Exceptions;
 using FlowOps.Application.Interfaces;
 using FlowOps.Domain.Enums;
@@ -21,13 +26,14 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     private static readonly Guid OperationsId = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid SupportId = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private readonly FlowOpsApiFactory _factory;
+    private Guid _actorId;
 
     public WorkItemsApiTests(FlowOpsApiFactory factory) => _factory = factory;
 
     [Fact]
     public async Task Categories_Create_Read_AndCreatedActivity_Persist()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
 
         var categories = await _factory.Client.GetFromJsonAsync<CategoryResponse[]>("/api/v1/categories");
         Assert.NotNull(categories);
@@ -50,13 +56,14 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         var initialEvent = Assert.Single(activity);
         Assert.Equal("Created", initialEvent.EventType);
         Assert.Equal(created.Id, initialEvent.WorkItemId);
-        Assert.Null(initialEvent.ActorUserId);
+        Assert.Equal(_actorId, initialEvent.ActorUserId);
+        Assert.Equal("Lifecycle administrator", initialEvent.Actor?.DisplayName);
     }
 
     [Fact]
     public async Task Patch_Assignment_Status_AndActivity_Persist()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var item = await CreateAsync("Initial", "Original description", "Medium", OperationsId, null);
 
         using var patch = await _factory.Client.PatchAsJsonAsync($"/api/v1/work-items/{item.Id}", new
@@ -111,7 +118,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [InlineData("Done")]
     public async Task SameStateStatusRequest_ReturnsConflict(string status)
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var item = await CreateAsync($"Same-state {status}", null, "Medium", null, null);
         if (status is "InProgress" or "Blocked" or "Done")
             await ChangeStatusAsync(item.Id, "InProgress");
@@ -132,7 +139,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [Fact]
     public async Task StaleConcurrentStatusChange_ConflictsAndRollsBackActivity()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var item = await CreateAsync("Concurrent status", null, "Medium", null, null);
         await ChangeStatusAsync(item.Id, "InProgress");
 
@@ -140,8 +147,8 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         await using var staleScope = _factory.Services.CreateAsyncScope();
         var firstContext = firstScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
         var staleContext = staleScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
-        var firstService = firstScope.ServiceProvider.GetRequiredService<IWorkItemService>();
-        var staleService = staleScope.ServiceProvider.GetRequiredService<IWorkItemService>();
+        var firstService = Service(firstScope.ServiceProvider);
+        var staleService = Service(staleScope.ServiceProvider);
         var firstRead = await firstContext.WorkItems.SingleAsync(x => x.Id == item.Id);
         var staleRead = await staleContext.WorkItems.SingleAsync(x => x.Id == item.Id);
         var originalVersion = firstRead.Version;
@@ -173,20 +180,20 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [Fact]
     public async Task StaleDescriptiveEdit_ConflictsWithAssignmentMutation()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var item = await CreateAsync("Original title", "Original description", "Medium", null, null);
 
         await using var firstScope = _factory.Services.CreateAsyncScope();
         await using var staleScope = _factory.Services.CreateAsyncScope();
         var firstContext = firstScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
         var staleContext = staleScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
-        var firstService = firstScope.ServiceProvider.GetRequiredService<IWorkItemService>();
-        var staleService = staleScope.ServiceProvider.GetRequiredService<IWorkItemService>();
+        var firstService = Service(firstScope.ServiceProvider);
+        var staleService = Service(staleScope.ServiceProvider);
         var firstRead = await firstContext.WorkItems.SingleAsync(x => x.Id == item.Id);
         var staleRead = await staleContext.WorkItems.SingleAsync(x => x.Id == item.Id);
         Assert.Equal(firstRead.Version, staleRead.Version);
 
-        var winner = await firstService.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Winner", ExpectedVersion = firstRead.Version });
+        var winner = await firstService.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeUserId = (await _factory.SeedUserAsync(displayName: "Winner")).Id, ExpectedVersion = firstRead.Version });
         Assert.Equal("Winner", winner?.AssigneeName);
 
         var conflict = await Assert.ThrowsAsync<WorkItemConcurrencyException>(() => staleService.UpdateAsync(
@@ -210,7 +217,8 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
 
         Assert.Equal("Original title", finalItem.Title);
         Assert.Equal("Original description", finalItem.Description);
-        Assert.Equal("Winner", finalItem.AssigneeName);
+        Assert.Equal(winner!.AssigneeUserId, finalItem.AssigneeUserId);
+        Assert.Null(finalItem.AssigneeName);
         Assert.DoesNotContain(events, x => x.EventType == ActivityEventType.TitleChanged);
         Assert.Single(events, x => x.EventType == ActivityEventType.AssignmentChanged);
     }
@@ -223,7 +231,9 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
             services.RemoveAll<IWorkItemService>();
             services.AddScoped<IWorkItemService, ConcurrencyConflictWorkItemService>();
         }));
-        using var client = conflictFactory.CreateClient();
+        using var client = conflictFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        client.DefaultRequestHeaders.Authorization = _factory.Client.DefaultRequestHeaders.Authorization ??
+            (await _factory.CreateAuthenticatedClientAsync(AppRoles.Admin)).DefaultRequestHeaders.Authorization;
         using var response = await client.PostAsJsonAsync($"/api/v1/work-items/{Guid.NewGuid()}/status", new { status = "Done", expectedVersion = 1 });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -241,7 +251,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [InlineData("assign")]
     public async Task StaleClientRepresentation_ReturnsConflictAndPreservesWinnerAndActivity(string operation)
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var created = await CreateAsync("Initial", "Original details", "Medium", OperationsId, "Original assignee");
         Assert.Equal(1, created.Version);
         var clientA = await GetAsync(created.Id);
@@ -275,7 +285,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
                 expectedVersion = clientA.Version
             }),
             "status" => await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{created.Id}/status", new { status = "InProgress", expectedVersion = clientA.Version }),
-            _ => await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{created.Id}/assign", new { assigneeName = "Stale assignee", expectedVersion = clientA.Version })
+            _ => await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{created.Id}/assign", new { assigneeUserId = (await _factory.SeedUserAsync(displayName: "Stale assignee")).Id, expectedVersion = clientA.Version })
         };
 
         Assert.Equal(HttpStatusCode.Conflict, staleResponse.StatusCode);
@@ -310,14 +320,14 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [InlineData("assign", "\"invalid\"")]
     public async Task InvalidExpectedVersion_ReturnsValidationProblem(string operation, string? versionJson)
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var item = await CreateAsync("Validation item", null, "Medium", null, null);
         var payload = new Dictionary<string, object?>
         {
             ["title"] = "Updated",
             ["priority"] = "High",
             ["status"] = "InProgress",
-            ["assigneeName"] = "Assignee"
+            ["assigneeUserId"] = (await _factory.SeedUserAsync(displayName: "Assignee")).Id
         };
         if (versionJson is not null) payload["expectedVersion"] = JsonSerializer.Deserialize<JsonElement>(versionJson);
         var path = $"/api/v1/work-items/{item.Id}" + (operation == "patch" ? "" : $"/{operation}");
@@ -338,7 +348,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [Fact]
     public async Task List_Search_Filters_Sort_AndPagination_AreServerSide()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         var alpha = await CreateAsync("Alpha", "login failure", "High", OperationsId, "Alice");
         var bravo = await CreateAsync("Bravo login", "normal", "Low", SupportId, "Bob");
         var charlie = await CreateAsync("Charlie", null, "Medium", OperationsId, "Carol");
@@ -369,7 +379,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [Fact]
     public async Task InvalidInputAndMissingResources_ReturnProblemDetails()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
 
         using var invalidCreate = await _factory.Client.PostAsJsonAsync("/api/v1/work-items", new { title = " ", priority = "High" });
         Assert.Equal(HttpStatusCode.BadRequest, invalidCreate.StatusCode);
@@ -402,7 +412,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     [Fact]
     public async Task MigrationUpAndDown_PreservesExistingWorkItems()
     {
-        await _factory.ResetDatabaseAsync();
+        await ResetAsync();
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
         var migrator = dbContext.GetService<IMigrator>();
@@ -440,13 +450,14 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
 
     private async Task<WorkItemResponse> CreateAsync(string title, string? description, string priority, Guid? categoryId, string? assigneeName)
     {
+        var assigneeUserId = assigneeName is null ? (Guid?)null : (await _factory.SeedUserAsync(displayName: assigneeName)).Id;
         using var response = await _factory.Client.PostAsJsonAsync("/api/v1/work-items", new
         {
             title,
             description,
             priority,
             categoryId,
-            assigneeName
+            assigneeUserId
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
@@ -470,10 +481,32 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
 
     private async Task<WorkItemResponse> AssignAsync(Guid id, string? assigneeName)
     {
+        var assigneeUserId = assigneeName is null ? (Guid?)null : (await _factory.SeedUserAsync(displayName: assigneeName)).Id;
         using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{id}/assign",
-            new { assigneeName, expectedVersion = (await GetAsync(id)).Version });
+            new { assigneeUserId, expectedVersion = (await GetAsync(id)).Version });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<WorkItemResponse>())!;
+    }
+
+    private async Task ResetAsync()
+    {
+        await _factory.ResetDatabaseAsync();
+        var user = await _factory.SeedUserAsync(AppRoles.Admin, displayName: "Lifecycle administrator");
+        _actorId = user.Id;
+        using var authenticated = await _factory.CreateAuthenticatedClientAsync(user);
+        _factory.Client.DefaultRequestHeaders.Authorization = authenticated.DefaultRequestHeaders.Authorization;
+    }
+
+    private IWorkItemService Service(IServiceProvider provider) => new WorkItemService(
+        provider.GetRequiredService<IWorkItemStore>(), NullLogger<WorkItemService>.Instance,
+        new ScopeCurrentUser(_actorId), provider.GetRequiredService<IUserDirectory>());
+
+    private sealed class ScopeCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid? UserId => userId;
+        public string? DisplayName => "Lifecycle administrator";
+        public IReadOnlyList<string> Roles => [AppRoles.Admin];
+        public bool IsAuthenticated => true;
     }
 
     private sealed class ConcurrencyConflictWorkItemService : IWorkItemService

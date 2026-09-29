@@ -9,7 +9,7 @@ public sealed class FlowOpsDbContextFactory : IDesignTimeDbContextFactory<FlowOp
     {
         // EF tooling builds only persistence; runtime JWT validation remains mandatory.
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
-            ?? "Host=/tmp;Database=flowops;Username=flowops";
+            ?? throw new InvalidOperationException("Set ConnectionStrings__DefaultConnection explicitly before running EF migration commands.");
         var options = new DbContextOptionsBuilder<FlowOpsDbContext>().UseNpgsql(connectionString).Options;
         return new FlowOpsDbContext(options);
     }
