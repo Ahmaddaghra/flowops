@@ -1,4 +1,5 @@
 using System;
+using FlowOps.Application.Exceptions;
 using FlowOps.Domain.Exceptions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,6 +50,11 @@ public class GlobalExceptionHandler : IExceptionHandler
 
         var (statusCode, title, detail) = exception switch
         {
+            WorkItemConcurrencyException => (
+                StatusCodes.Status409Conflict,
+                "Work Item Concurrency Conflict",
+                WorkItemConcurrencyException.ConflictDetail
+            ),
             InvalidWorkItemTransitionException transition => (
                 StatusCodes.Status409Conflict,
                 "Invalid Work Item Transition",

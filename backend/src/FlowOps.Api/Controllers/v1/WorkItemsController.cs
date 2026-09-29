@@ -51,6 +51,7 @@ public class WorkItemsController : ControllerBase
     [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<WorkItemResponse>> Update(Guid id, [FromBody] UpdateWorkItemRequest request, CancellationToken cancellationToken)
     {
         var item = await _workItemService.UpdateAsync(id, request, cancellationToken);
@@ -74,6 +75,7 @@ public class WorkItemsController : ControllerBase
     [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<WorkItemResponse>> Assign(Guid id, [FromBody] AssignWorkItemRequest request, CancellationToken cancellationToken)
     {
         var item = await _workItemService.AssignAsync(id, request, cancellationToken);

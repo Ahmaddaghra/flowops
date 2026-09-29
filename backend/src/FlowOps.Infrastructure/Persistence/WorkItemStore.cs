@@ -1,4 +1,5 @@
 using FlowOps.Application.DTOs;
+using FlowOps.Application.Exceptions;
 using FlowOps.Application.Interfaces;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
@@ -83,8 +84,17 @@ public class WorkItemStore : IWorkItemStore
         await _dbContext.ActivityEvents.AddAsync(activityEvent, cancellationToken);
     }
 
-    public async Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
-        await _dbContext.SaveChangesAsync(cancellationToken);
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new WorkItemConcurrencyException();
+        }
+    }
 
     private static IOrderedQueryable<WorkItem> ApplyOrdering(IQueryable<WorkItem> items, string sort, string direction)
     {

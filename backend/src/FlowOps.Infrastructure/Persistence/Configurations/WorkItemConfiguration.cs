@@ -13,6 +13,10 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 
         builder.HasKey(x => x.Id);
 
+        builder.Property(x => x.Version)
+            .HasDefaultValue(1L)
+            .IsConcurrencyToken();
+
         builder.Property(x => x.Title)
             .IsRequired()
             .HasMaxLength(WorkItem.MaxTitleLength);
