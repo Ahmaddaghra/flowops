@@ -2,11 +2,16 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FlowOps.Application.DTOs;
+using FlowOps.Application.Exceptions;
+using FlowOps.Application.Interfaces;
+using FlowOps.Domain.Enums;
 using FlowOps.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace FlowOps.IntegrationTests;
@@ -95,6 +100,136 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.True(events.Zip(events.Skip(1), (newer, older) => newer.CreatedAtUtc >= older.CreatedAtUtc).All(x => x));
     }
 
+    [Theory]
+    [InlineData("Todo")]
+    [InlineData("InProgress")]
+    [InlineData("Blocked")]
+    [InlineData("Done")]
+    public async Task SameStateStatusRequest_ReturnsConflict(string status)
+    {
+        await _factory.ResetDatabaseAsync();
+        var item = await CreateAsync($"Same-state {status}", null, "Medium", null, null);
+        if (status is "InProgress" or "Blocked" or "Done")
+            await ChangeStatusAsync(item.Id, "InProgress");
+        if (status == "Blocked")
+            await ChangeStatusAsync(item.Id, "Blocked");
+        if (status == "Done")
+            await ChangeStatusAsync(item.Id, "Done");
+
+        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{item.Id}/status", new { status });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Invalid Work Item Transition", body.RootElement.GetProperty("title").GetString());
+        Assert.Contains($"from {status} to {status}", body.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task StaleConcurrentStatusChange_ConflictsAndRollsBackActivity()
+    {
+        await _factory.ResetDatabaseAsync();
+        var item = await CreateAsync("Concurrent status", null, "Medium", null, null);
+        await ChangeStatusAsync(item.Id, "InProgress");
+
+        await using var firstScope = _factory.Services.CreateAsyncScope();
+        await using var staleScope = _factory.Services.CreateAsyncScope();
+        var firstContext = firstScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var staleContext = staleScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var firstService = firstScope.ServiceProvider.GetRequiredService<IWorkItemService>();
+        var staleService = staleScope.ServiceProvider.GetRequiredService<IWorkItemService>();
+        var firstRead = await firstContext.WorkItems.SingleAsync(x => x.Id == item.Id);
+        var staleRead = await staleContext.WorkItems.SingleAsync(x => x.Id == item.Id);
+        var originalVersion = firstRead.Version;
+        Assert.Equal(originalVersion, staleRead.Version);
+        Assert.Equal(WorkItemStatus.InProgress, firstRead.Status);
+        Assert.Equal(WorkItemStatus.InProgress, staleRead.Status);
+
+        var winner = await firstService.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Blocked" });
+        Assert.Equal("Blocked", winner?.Status);
+
+        var conflict = await Assert.ThrowsAsync<WorkItemConcurrencyException>(() =>
+            staleService.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Done" }));
+        Assert.Equal(WorkItemConcurrencyException.ConflictDetail, conflict.Message);
+        Assert.Null(conflict.InnerException);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationContext = verificationScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var finalItem = await verificationContext.WorkItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
+        var events = await verificationContext.ActivityEvents.AsNoTracking()
+            .Where(x => x.WorkItemId == item.Id)
+            .ToListAsync();
+
+        Assert.Equal(WorkItemStatus.Blocked, finalItem.Status);
+        Assert.Equal(originalVersion + 1, finalItem.Version);
+        Assert.Equal(1, events.Count(x => x.Description == "Status changed from InProgress to Blocked"));
+        Assert.DoesNotContain(events, x => x.Description == "Status changed from InProgress to Done");
+    }
+
+    [Fact]
+    public async Task StaleDescriptiveEdit_ConflictsWithAssignmentMutation()
+    {
+        await _factory.ResetDatabaseAsync();
+        var item = await CreateAsync("Original title", "Original description", "Medium", null, null);
+
+        await using var firstScope = _factory.Services.CreateAsyncScope();
+        await using var staleScope = _factory.Services.CreateAsyncScope();
+        var firstContext = firstScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var staleContext = staleScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var firstService = firstScope.ServiceProvider.GetRequiredService<IWorkItemService>();
+        var staleService = staleScope.ServiceProvider.GetRequiredService<IWorkItemService>();
+        var firstRead = await firstContext.WorkItems.SingleAsync(x => x.Id == item.Id);
+        var staleRead = await staleContext.WorkItems.SingleAsync(x => x.Id == item.Id);
+        Assert.Equal(firstRead.Version, staleRead.Version);
+
+        var winner = await firstService.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Winner" });
+        Assert.Equal("Winner", winner?.AssigneeName);
+
+        var conflict = await Assert.ThrowsAsync<WorkItemConcurrencyException>(() => staleService.UpdateAsync(
+            item.Id,
+            new UpdateWorkItemRequest
+            {
+                Title = "Stale title",
+                Description = "Stale description",
+                Priority = "High"
+            }));
+        Assert.Equal(WorkItemConcurrencyException.ConflictDetail, conflict.Message);
+        Assert.Null(conflict.InnerException);
+
+        await using var verificationScope = _factory.Services.CreateAsyncScope();
+        var verificationContext = verificationScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var finalItem = await verificationContext.WorkItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
+        var events = await verificationContext.ActivityEvents.AsNoTracking()
+            .Where(x => x.WorkItemId == item.Id)
+            .ToListAsync();
+
+        Assert.Equal("Original title", finalItem.Title);
+        Assert.Equal("Original description", finalItem.Description);
+        Assert.Equal("Winner", finalItem.AssigneeName);
+        Assert.DoesNotContain(events, x => x.EventType == ActivityEventType.TitleChanged);
+        Assert.Single(events, x => x.EventType == ActivityEventType.AssignmentChanged);
+    }
+
+    [Fact]
+    public async Task StaleConcurrencyConflictOnStatusRoute_ReturnsSafeProblemDetails()
+    {
+        using var conflictFactory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IWorkItemService>();
+            services.AddScoped<IWorkItemService, ConcurrencyConflictWorkItemService>();
+        }));
+        using var client = conflictFactory.CreateClient();
+        using var response = await client.PostAsJsonAsync($"/api/v1/work-items/{Guid.NewGuid()}/status", new { status = "Done" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Work Item Concurrency Conflict", body.RootElement.GetProperty("title").GetString());
+        Assert.Equal(WorkItemConcurrencyException.ConflictDetail, body.RootElement.GetProperty("detail").GetString());
+        var responseText = body.RootElement.GetRawText();
+        Assert.DoesNotContain(nameof(DbUpdateConcurrencyException), responseText);
+    }
+
     [Fact]
     public async Task List_Search_Filters_Sort_AndPagination_AreServerSide()
     {
@@ -179,6 +314,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         await migrator.MigrateAsync();
         var migrated = await dbContext.WorkItems.AsNoTracking().SingleAsync(x => x.Id == existingId);
         Assert.Equal("Legacy item", migrated.Title);
+        Assert.Equal(1L, migrated.Version);
         Assert.Null(migrated.CategoryId);
         Assert.Equal(4, await dbContext.Categories.CountAsync());
 
@@ -228,5 +364,36 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     {
         using var response = await _factory.Client.PostAsJsonAsync(path, payload);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private sealed class ConcurrencyConflictWorkItemService : IWorkItemService
+    {
+        public ConcurrencyConflictWorkItemService()
+        {
+        }
+
+        public Task<PagedResult<WorkItemResponse>> ListAsync(WorkItemQuery query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkItemResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkItemResponse> CreateAsync(CreateWorkItemRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkItemResponse?> UpdateAsync(Guid id, UpdateWorkItemRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkItemResponse?> ChangeStatusAsync(Guid id, ChangeWorkItemStatusRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromException<WorkItemResponse?>(new WorkItemConcurrencyException());
+
+        public Task<WorkItemResponse?> AssignAsync(Guid id, AssignWorkItemRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ActivityEventResponse>?> GetActivityAsync(Guid id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<CategoryResponse>> GetCategoriesAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }
