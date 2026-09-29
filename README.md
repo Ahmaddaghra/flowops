@@ -136,7 +136,7 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 ### 1. Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/) (Version 10.0.401 or compatible)
-- [Node.js](https://nodejs.org/) (Version 20+ or 22 LTS recommended) and `npm`
+- [Node.js](https://nodejs.org/) 22.22.2 (the version in `frontend/.nvmrc` used by CI) and `npm`. The frontend also supports later 22.x releases, 24.15.0 or later 24.x releases, and 26+. Its locked test dependencies require these ranges; `frontend/.npmrc` enforces the `package.json` engine prerequisite during installation.
 - [Docker Desktop](https://www.docker.com/) or local [PostgreSQL 17](https://www.postgresql.org/)
 
 ### 2. Database Setup
