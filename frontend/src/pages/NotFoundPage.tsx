@@ -1,6 +1,5 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/Button';
 import { FileQuestion, ArrowLeft } from 'lucide-react';
 
 export const NotFoundPage: React.FC = () => {
@@ -15,10 +14,12 @@ export const NotFoundPage: React.FC = () => {
       <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
         The page or resource you requested does not exist or has been moved.
       </p>
-      <Link to="/work-items">
-        <Button variant="primary" size="md" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-          Return to Work Items
-        </Button>
+      <Link
+        to="/work-items"
+        className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-transparent bg-slate-900 px-4 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 active:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2 select-none"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Return to Work Items
       </Link>
     </div>
   );

@@ -1,11 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import { CheckSquare, LayoutDashboard, Settings, X, Layers } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, getFocusableElements } from '@/lib/utils';
 
 interface MobileNavProps {
   isOpen: boolean;
   onClose: () => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 const navigation = [
@@ -14,20 +15,63 @@ const navigation = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
-export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
+export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose, triggerRef }) => {
+  const dialogTitleId = useId();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
+    if (!isOpen) return;
+
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const trigger = triggerRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (e.key !== 'Tab' || !drawerRef.current) return;
+      const focusableElements = getFocusableElements(drawerRef.current);
+      if (focusableElements.length === 0) {
+        e.preventDefault();
+        drawerRef.current.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (
+        e.shiftKey &&
+        (document.activeElement === firstElement ||
+          !drawerRef.current.contains(document.activeElement))
+      ) {
+        e.preventDefault();
+        lastElement.focus();
+      } else if (
+        !e.shiftKey &&
+        (document.activeElement === lastElement ||
+          !drawerRef.current.contains(document.activeElement))
+      ) {
+        e.preventDefault();
+        firstElement.focus();
+      }
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    }
+
+    closeButtonRef.current?.focus();
+    document.addEventListener('keydown', handleKeyDown);
+
     return () => {
-      document.body.style.overflow = 'unset';
-      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      const focusTarget = trigger ?? previousFocus;
+      if (focusTarget?.isConnected) focusTarget.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, triggerRef]);
 
   if (!isOpen) return null;
 
@@ -41,15 +85,27 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
       />
 
       {/* Drawer */}
-      <div className="relative flex flex-col w-72 max-w-[80vw] bg-slate-900 border-r border-slate-800 text-slate-300 z-10 animate-in slide-in-from-left duration-200 shadow-2xl">
+      <div
+        ref={drawerRef}
+        id="mobile-navigation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={dialogTitleId}
+        tabIndex={-1}
+        className="relative flex flex-col w-72 max-w-[80vw] bg-slate-900 border-r border-slate-800 text-slate-300 z-10 animate-in slide-in-from-left duration-200 shadow-2xl"
+      >
         <div className="flex items-center justify-between h-16 px-6 border-b border-slate-800/80">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
               <Layers className="h-4 w-4" />
             </div>
-            <span className="font-bold text-base text-white">FlowOps</span>
+            <h2 id={dialogTitleId} className="font-bold text-base text-white">
+              FlowOps navigation
+            </h2>
           </div>
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
             aria-label="Close menu"
             className="rounded p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-none"
@@ -60,7 +116,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
 
         <nav
           className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto"
-          aria-label="Mobile Navigation"
+          aria-label="Primary navigation"
         >
           {navigation.map((item) => (
             <NavLink

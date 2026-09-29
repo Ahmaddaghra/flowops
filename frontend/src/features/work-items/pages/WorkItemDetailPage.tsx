@@ -3,7 +3,6 @@ import { useParams, Link } from 'react-router-dom';
 import { workItemsApi } from '@/lib/api/workItems';
 import { WorkItem } from '@/types/workItems';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -213,10 +212,11 @@ export const WorkItemDetailPage: React.FC = () => {
           Work item status transitions, editing, and history auditing will be enabled in
           Phase 3.
         </span>
-        <Link to="/work-items">
-          <Button variant="ghost" size="sm">
-            View all items
-          </Button>
+        <Link
+          to="/work-items"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:ring-offset-2 select-none"
+        >
+          View all items
         </Link>
       </div>
     </div>

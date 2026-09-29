@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useId } from 'react';
 import { cn } from '@/lib/utils';
 
 export interface SelectOption {
@@ -14,8 +14,26 @@ export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElemen
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, error, hint, id, options, ...props }, ref) => {
-    const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+  (
+    {
+      className,
+      label,
+      error,
+      hint,
+      id,
+      options,
+      'aria-describedby': ariaDescribedBy,
+      'aria-invalid': ariaInvalid,
+      ...props
+    },
+    ref
+  ) => {
+    const generatedId = useId();
+    const selectId = id ?? `select-${generatedId}`;
+    const errorId = error ? `${selectId}-error` : undefined;
+    const hintId = hint ? `${selectId}-hint` : undefined;
+    const describedBy =
+      [ariaDescribedBy, errorId, hintId].filter(Boolean).join(' ') || undefined;
 
     return (
       <div className="w-full space-y-1.5 text-left">
@@ -27,6 +45,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         <select
           id={selectId}
           ref={ref}
+          aria-describedby={describedBy}
+          aria-invalid={error ? true : ariaInvalid}
           className={cn(
             'flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/20 focus-visible:border-indigo-600 disabled:cursor-not-allowed disabled:opacity-50',
             error &&
@@ -41,11 +61,16 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error ? (
-          <p className="text-xs text-rose-600">{error}</p>
-        ) : hint ? (
-          <p className="text-xs text-slate-500">{hint}</p>
-        ) : null}
+        {error && (
+          <p id={errorId} className="text-xs text-rose-600">
+            {error}
+          </p>
+        )}
+        {hint && (
+          <p id={hintId} className="text-xs text-slate-500">
+            {hint}
+          </p>
+        )}
       </div>
     );
   }

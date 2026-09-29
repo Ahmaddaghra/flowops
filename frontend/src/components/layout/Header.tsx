@@ -4,10 +4,17 @@ import { useLocation } from 'react-router-dom';
 
 interface HeaderProps {
   onOpenMobileNav: () => void;
+  mobileNavOpen: boolean;
+  mobileNavTriggerRef: React.RefObject<HTMLButtonElement | null>;
   isBackendHealthy: boolean | null;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenMobileNav, isBackendHealthy }) => {
+export const Header: React.FC<HeaderProps> = ({
+  onOpenMobileNav,
+  mobileNavOpen,
+  mobileNavTriggerRef,
+  isBackendHealthy,
+}) => {
   const location = useLocation();
 
   const getBreadcrumb = () => {
@@ -22,9 +29,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileNav, isBackendHealth
     <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur-xs px-4 sm:px-6 lg:px-8">
       <div className="flex items-center gap-3">
         <button
+          ref={mobileNavTriggerRef}
           type="button"
           onClick={onOpenMobileNav}
-          aria-label="Open sidebar"
+          aria-label="Open navigation menu"
+          aria-haspopup="dialog"
+          aria-expanded={mobileNavOpen}
+          aria-controls="mobile-navigation-dialog"
           className="lg:hidden -ml-1.5 p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
         >
           <Menu className="h-5 w-5" />
