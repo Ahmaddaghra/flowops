@@ -13,6 +13,7 @@ public class WorkItemTests
 
         Assert.Equal("Repair login", item.Title);
         Assert.Equal(WorkItemStatus.Todo, item.Status);
+        Assert.Equal(1, item.Version);
         Assert.Equal(DateTimeKind.Utc, item.CreatedAtUtc.Kind);
         Assert.Equal(item.CreatedAtUtc, item.UpdatedAtUtc);
     }
@@ -54,6 +55,7 @@ public class WorkItemTests
         Assert.True(item.ChangeTitle("  Updated  "));
 
         Assert.Equal("Updated", item.Title);
+        Assert.Equal(2, item.Version);
         Assert.True(item.UpdatedAtUtc > originalTime);
     }
 
@@ -110,6 +112,26 @@ public class WorkItemTests
         Assert.False(item.Assign("Ahmad"));
 
         Assert.Equal(timestamp, item.UpdatedAtUtc);
+        Assert.Equal(1, item.Version);
+    }
+
+    [Fact]
+    public void MeaningfulMutations_IncrementVersion()
+    {
+        var item = new WorkItem("Initial");
+
+        Assert.True(item.ChangeTitle("Updated"));
+        Assert.Equal(2, item.Version);
+        Assert.True(item.ChangeDescription("Details"));
+        Assert.Equal(3, item.Version);
+        Assert.True(item.ChangePriority(WorkItemPriority.High));
+        Assert.Equal(4, item.Version);
+        Assert.True(item.ChangeCategory(Guid.NewGuid()));
+        Assert.Equal(5, item.Version);
+        Assert.True(item.Assign("Ahmad"));
+        Assert.Equal(6, item.Version);
+        Assert.True(item.ChangeStatus(WorkItemStatus.InProgress));
+        Assert.Equal(7, item.Version);
     }
 
     [Theory]
@@ -139,6 +161,22 @@ public class WorkItemTests
         var item = new WorkItem("Title", status: current);
 
         Assert.Throws<InvalidWorkItemTransitionException>(() => item.ChangeStatus(next));
+    }
+
+    [Theory]
+    [InlineData(WorkItemStatus.Todo)]
+    [InlineData(WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.Blocked)]
+    [InlineData(WorkItemStatus.Done)]
+    public void ChangeStatus_RejectsSameStateTransition(WorkItemStatus status)
+    {
+        var item = new WorkItem("Title", status: status);
+
+        var exception = Assert.Throws<InvalidWorkItemTransitionException>(() => item.ChangeStatus(status));
+
+        Assert.Equal(status, exception.CurrentStatus);
+        Assert.Equal(status, exception.RequestedStatus);
+        Assert.Equal(1, item.Version);
     }
 
     [Fact]

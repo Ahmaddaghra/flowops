@@ -10,6 +10,7 @@ public class WorkItem
     public const int MaxAssigneeNameLength = 100;
 
     public Guid Id { get; private set; }
+    public long Version { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public string? Description { get; private set; }
     public WorkItemStatus Status { get; private set; }
@@ -33,6 +34,7 @@ public class WorkItem
         DateTime? createdAtUtc = null)
     {
         Id = id ?? Guid.NewGuid();
+        Version = 1;
         Title = ValidateTitle(title);
         Description = ValidateDescription(description);
         Priority = ValidatePriority(priority);
@@ -84,7 +86,6 @@ public class WorkItem
     public bool ChangeStatus(WorkItemStatus status)
     {
         var validated = ValidateStatus(status);
-        if (Status == validated) return false;
         if (!CanTransitionTo(validated))
         {
             throw new InvalidWorkItemTransitionException(Status, validated);
@@ -121,6 +122,7 @@ public class WorkItem
     {
         var now = DateTime.UtcNow;
         UpdatedAtUtc = now > UpdatedAtUtc ? now : UpdatedAtUtc.AddTicks(1);
+        Version++;
     }
 
     private static string ValidateTitle(string title)
