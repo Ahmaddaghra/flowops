@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using FlowOps.Application.DTOs;
 using FlowOps.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
@@ -21,59 +17,84 @@ public class WorkItemsController : ControllerBase
         _workItemService = workItemService ?? throw new ArgumentNullException(nameof(workItemService));
     }
 
-    /// <summary>
-    /// Retrieves all work items.
-    /// </summary>
-    /// <returns>A list of work items.</returns>
+    /// <summary>Lists all work items. Server-side query capabilities are available as the lifecycle query stage is completed.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<WorkItemResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<WorkItemResponse>>> GetAll(CancellationToken cancellationToken)
     {
-        var items = await _workItemService.GetAllAsync(cancellationToken);
-        return Ok(items);
+        return Ok(await _workItemService.GetAllAsync(cancellationToken));
     }
 
-    /// <summary>
-    /// Retrieves a work item by its unique ID.
-    /// </summary>
-    /// <param name="id">The unique identifier of the work item.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The requested work item.</returns>
+    /// <summary>Retrieves a work item by its unique ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<WorkItemResponse>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var item = await _workItemService.GetByIdAsync(id, cancellationToken);
-        if (item == null)
-        {
-            return NotFound(new ProblemDetails
-            {
-                Status = StatusCodes.Status404NotFound,
-                Title = "Work Item Not Found",
-                Detail = $"Work item with ID '{id}' was not found.",
-                Instance = HttpContext.Request.Path
-            });
-        }
-
-        return Ok(item);
+        return item is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(item);
     }
 
-    /// <summary>
-    /// Creates a new work item.
-    /// </summary>
-    /// <param name="request">The work item creation request payload.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The created work item.</returns>
+    /// <summary>Creates a work item and its initial activity event.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<WorkItemResponse>> Create(
-        [FromBody] CreateWorkItemRequest request,
-        CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<WorkItemResponse>> Create([FromBody] CreateWorkItemRequest request, CancellationToken cancellationToken)
     {
         var item = await _workItemService.CreateAsync(request, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
     }
+
+    /// <summary>Updates title, description, priority, and category only. Status changes use the dedicated workflow endpoint.</summary>
+    [HttpPatch("{id:guid}")]
+    [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<WorkItemResponse>> Update(Guid id, [FromBody] UpdateWorkItemRequest request, CancellationToken cancellationToken)
+    {
+        var item = await _workItemService.UpdateAsync(id, request, cancellationToken);
+        return item is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(item);
+    }
+
+    /// <summary>Moves a work item through an allowed status transition.</summary>
+    [HttpPost("{id:guid}/status")]
+    [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<WorkItemResponse>> ChangeStatus(Guid id, [FromBody] ChangeWorkItemStatusRequest request, CancellationToken cancellationToken)
+    {
+        var item = await _workItemService.ChangeStatusAsync(id, request, cancellationToken);
+        return item is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(item);
+    }
+
+    /// <summary>Assigns a display name, or unassigns when assigneeName is null or empty.</summary>
+    [HttpPost("{id:guid}/assign")]
+    [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<WorkItemResponse>> Assign(Guid id, [FromBody] AssignWorkItemRequest request, CancellationToken cancellationToken)
+    {
+        var item = await _workItemService.AssignAsync(id, request, cancellationToken);
+        return item is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(item);
+    }
+
+    /// <summary>Returns newest-first activity history for a work item.</summary>
+    [HttpGet("{id:guid}/activity")]
+    [ProducesResponseType(typeof(IReadOnlyList<ActivityEventResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<ActivityEventResponse>>> GetActivity(Guid id, CancellationToken cancellationToken)
+    {
+        var events = await _workItemService.GetActivityAsync(id, cancellationToken);
+        return events is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(events);
+    }
+
+    private NotFoundObjectResult NotFoundProblem(string detail) => NotFound(new ProblemDetails
+    {
+        Status = StatusCodes.Status404NotFound,
+        Title = "Resource Not Found",
+        Detail = detail,
+        Instance = HttpContext.Request.Path
+    });
 }

@@ -7,6 +7,7 @@ using FlowOps.Application.Interfaces;
 using FlowOps.Application.Services;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
+using FlowOps.Domain.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -146,5 +147,95 @@ public class WorkItemServiceTests
         // Assert
         Assert.Null(result);
         _mockStore.Verify(x => x.GetByIdAsync(searchId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_AddsCreatedActivityAtomically()
+    {
+        ActivityEvent? savedActivity = null;
+        _mockStore.Setup(x => x.AddAsync(It.IsAny<WorkItem>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ActivityEvent, CancellationToken>((activity, _) => savedActivity = activity)
+            .Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var result = await _service.CreateAsync(new CreateWorkItemRequest { Title = "Created", Priority = "High" });
+
+        Assert.Equal(result.Id, savedActivity?.WorkItemId);
+        Assert.Equal(ActivityEventType.Created, savedActivity?.EventType);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RecordsOnlyMeaningfulFieldChanges()
+    {
+        var item = new WorkItem("Before", description: "Details");
+        var category = new Category(Guid.NewGuid(), "Support");
+        var events = new List<ActivityEvent>();
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _mockStore.Setup(x => x.GetCategoryByIdAsync(category.Id, It.IsAny<CancellationToken>())).ReturnsAsync(category);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ActivityEvent, CancellationToken>((activity, _) => events.Add(activity)).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        await _service.UpdateAsync(item.Id, new UpdateWorkItemRequest
+        {
+            Title = "After",
+            Description = "Details",
+            Priority = "High",
+            CategoryId = category.Id
+        });
+
+        Assert.Equal(new[] { ActivityEventType.TitleChanged, ActivityEventType.PriorityChanged, ActivityEventType.CategoryChanged },
+            events.Select(x => x.EventType));
+        Assert.Contains("Uncategorized to Support", events[^1].Description);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NoOp_DoesNotSaveOrAddActivity()
+    {
+        var item = new WorkItem("Same", description: "Details", priority: WorkItemPriority.High);
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+
+        await _service.UpdateAsync(item.Id, new UpdateWorkItemRequest
+        {
+            Title = "Same",
+            Description = "Details",
+            Priority = "High"
+        });
+
+        _mockStore.Verify(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_RejectsInvalidTransitionAndDoesNotSave()
+    {
+        var item = new WorkItem("Done", status: WorkItemStatus.Done);
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+
+        await Assert.ThrowsAsync<InvalidWorkItemTransitionException>(() =>
+            _service.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Todo" }));
+
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AssignAsync_SupportsAssignmentAndUnassignment()
+    {
+        var item = new WorkItem("Assigned");
+        var events = new List<ActivityEvent>();
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ActivityEvent, CancellationToken>((activity, _) => events.Add(activity)).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Ahmad" });
+        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = null });
+
+        Assert.Null(item.AssigneeName);
+        Assert.Equal(new[] { "Assigned to Ahmad", "Work item unassigned" }, events.Select(x => x.Description));
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 }

@@ -1,5 +1,5 @@
 using System;
-using System.Net;
+using FlowOps.Domain.Exceptions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Diagnostics;
@@ -28,22 +28,41 @@ public class GlobalExceptionHandler : IExceptionHandler
     {
         _logger.LogError(exception, "An unhandled exception occurred while processing the request: {Message}", exception.Message);
 
+        if (exception is ArgumentException argumentException)
+        {
+            var errors = new Dictionary<string, string[]>
+            {
+                [string.IsNullOrWhiteSpace(argumentException.ParamName) ? "request" : argumentException.ParamName] = [argumentException.Message]
+            };
+            var validation = new ValidationProblemDetails(errors)
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "One or more validation errors occurred.",
+                Instance = httpContext.Request.Path
+            };
+            validation.Extensions["traceId"] = httpContext.TraceIdentifier;
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            httpContext.Response.ContentType = "application/problem+json";
+            await httpContext.Response.WriteAsJsonAsync(validation, cancellationToken);
+            return true;
+        }
+
         var (statusCode, title, detail) = exception switch
         {
-            ArgumentException argEx => (
-                StatusCodes.Status400BadRequest,
-                "Bad Request",
-                argEx.Message
+            InvalidWorkItemTransitionException transition => (
+                StatusCodes.Status409Conflict,
+                "Invalid Work Item Transition",
+                transition.Message
             ),
-            FormatException formatEx => (
-                StatusCodes.Status400BadRequest,
-                "Invalid Payload Format",
-                formatEx.Message
-            ),
-            KeyNotFoundException notFoundEx => (
+            KeyNotFoundException notFound => (
                 StatusCodes.Status404NotFound,
                 "Resource Not Found",
-                notFoundEx.Message
+                notFound.Message
+            ),
+            BadHttpRequestException badRequest => (
+                StatusCodes.Status400BadRequest,
+                "Invalid Request",
+                badRequest.Message
             ),
             _ => (
                 StatusCodes.Status500InternalServerError,
