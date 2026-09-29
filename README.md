@@ -2,7 +2,7 @@
 
 A full-stack operations and support workflow platform built to demonstrate clean application architecture, API design, responsive UI, testing, and collaborative engineering practices.
 
-FlowOps helps small teams create, assign, prioritize, track, and audit work items from intake to resolution. The project is intentionally scoped as a production-style portfolio application rather than a tutorial clone.
+FlowOps is being built to help small teams create, assign, prioritize, track, and audit work items from intake to resolution. The project is intentionally scoped as a production-style portfolio application rather than a tutorial clone.
 
 ## Current Project Status
 
@@ -91,7 +91,7 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - **`appsettings.Development.json` (Local Development):**
   Contains disposable container-only defaults for zero-friction local development. These are strictly local non-production values.
 - **Frontend `.env.example`:**
-  Defines `VITE_API_BASE_URL` (defaults to `/api/v1` with Vite dev proxy forwarding to `http://localhost:5055`).
+  Sets `VITE_API_BASE_URL=/api/v1`. The variable is optional because the frontend defaults to `/api/v1`; Vite proxies `/api` requests to `http://localhost:5055` during local development.
 - **`.env`:**
   Ignored by git and untracked.
 
@@ -114,15 +114,14 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Tailwind CSS restrained B2B operations design system & responsive layout (desktop & mobile)
 - [x] Reusable UI primitives (`Button`, `Badge`, `Card`, `Table`, `Skeleton`, `EmptyState`, `ErrorState`, `PageHeader`, `Input`, `Select`, `Modal`)
 - [x] Typed API client with automatic RFC 7807 `ProblemDetails` error extraction
-- [x] Work items list view (high-density table for desktop, cards for mobile)
+- [x] Read-only work items integration: `GET /api/v1/work-items`, `GET /api/v1/work-items/{id}`, and `GET /api/v1/health`
+- [x] Work items list view (high-density table for desktop, cards for mobile) with refresh, loading, empty, and retryable error states
 - [x] Read-only work item detail view with ID copying
-- [x] Create work item modal with live validation & backend error handling
-- [x] Resilient loading skeletons, empty states, and retryable error handling
+- [x] Dashboard placeholder, settings/system status page, and not-found page
 - [x] Frontend CI workflow (ESLint, Prettier, TypeScript compilation, Vite build)
 
 ### Planned (Future Phases)
-- [ ] Work item edit, status transitions & workflow auditing (Phase 3)
-- [ ] Work item search, filtering & pagination (Phase 3)
+- [ ] Create and edit work items, status transitions, assignment changes, search, filtering, sorting, pagination, and activity/history (Phase 3)
 - [ ] JWT authentication, user identity & work item comments (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
@@ -179,6 +178,7 @@ npm run dev
 
 The web application will be running at `http://localhost:5173`.
 All requests to `/api/v1` are automatically proxied to the backend on `http://localhost:5055`.
+The frontend uses `/api/v1` by default. To set it explicitly, copy `.env.example` to `.env` inside `frontend/`; keep `/api/v1` as the value for local development so requests continue through the Vite proxy.
 
 ### 5. Frontend Scripts
 
