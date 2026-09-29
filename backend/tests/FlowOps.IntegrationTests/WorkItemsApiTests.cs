@@ -34,11 +34,13 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.Equal(new[] { "Billing", "Engineering", "Operations", "Support" }, categories.Select(x => x.Name));
 
         var created = await CreateAsync("Investigate login", "Intermittent failure", "High", OperationsId, "Ahmad");
+        Assert.Equal(1, created.Version);
         Assert.Equal(OperationsId, created.CategoryId);
         Assert.Equal("Operations", created.CategoryName);
 
         var detail = await _factory.Client.GetFromJsonAsync<WorkItemResponse>($"/api/v1/work-items/{created.Id}");
         Assert.NotNull(detail);
+        Assert.Equal(created.Version, detail.Version);
         Assert.Equal("Investigate login", detail.Title);
         Assert.Equal("Todo", detail.Status);
         Assert.Equal("Ahmad", detail.AssigneeName);
@@ -62,24 +64,26 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
             title = "Updated title",
             description = "Updated description",
             priority = "Critical",
-            categoryId = SupportId
+            categoryId = SupportId,
+            expectedVersion = item.Version
         });
         Assert.Equal(HttpStatusCode.OK, patch.StatusCode);
         var updated = await patch.Content.ReadFromJsonAsync<WorkItemResponse>();
         Assert.NotNull(updated);
+        Assert.Equal(item.Version + 4, updated.Version);
         Assert.Equal("Updated title", updated.Title);
         Assert.Equal("Critical", updated.Priority);
         Assert.Equal(SupportId, updated.CategoryId);
         Assert.Equal("Support", updated.CategoryName);
 
-        await PostAsync($"/api/v1/work-items/{item.Id}/assign", new { assigneeName = "Ahmad" });
-        await PostAsync($"/api/v1/work-items/{item.Id}/assign", new { assigneeName = (string?)null });
+        await AssignAsync(item.Id, "Ahmad");
+        await AssignAsync(item.Id, null);
         Assert.Equal("InProgress", (await ChangeStatusAsync(item.Id, "InProgress")).Status);
         Assert.Equal("Blocked", (await ChangeStatusAsync(item.Id, "Blocked")).Status);
         Assert.Equal("InProgress", (await ChangeStatusAsync(item.Id, "InProgress")).Status);
         Assert.Equal("Done", (await ChangeStatusAsync(item.Id, "Done")).Status);
 
-        using var invalidTransition = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{item.Id}/status", new { status = "Todo" });
+        using var invalidTransition = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{item.Id}/status", new { status = "Todo", expectedVersion = (await GetAsync(item.Id)).Version });
         Assert.Equal(HttpStatusCode.Conflict, invalidTransition.StatusCode);
         Assert.Equal("application/problem+json", invalidTransition.Content.Headers.ContentType?.MediaType);
 
@@ -116,7 +120,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         if (status == "Done")
             await ChangeStatusAsync(item.Id, "Done");
 
-        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{item.Id}/status", new { status });
+        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{item.Id}/status", new { status, expectedVersion = (await GetAsync(item.Id)).Version });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -145,11 +149,11 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.Equal(WorkItemStatus.InProgress, firstRead.Status);
         Assert.Equal(WorkItemStatus.InProgress, staleRead.Status);
 
-        var winner = await firstService.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Blocked" });
+        var winner = await firstService.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Blocked", ExpectedVersion = originalVersion });
         Assert.Equal("Blocked", winner?.Status);
 
         var conflict = await Assert.ThrowsAsync<WorkItemConcurrencyException>(() =>
-            staleService.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Done" }));
+            staleService.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Done", ExpectedVersion = originalVersion }));
         Assert.Equal(WorkItemConcurrencyException.ConflictDetail, conflict.Message);
         Assert.Null(conflict.InnerException);
 
@@ -182,13 +186,14 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         var staleRead = await staleContext.WorkItems.SingleAsync(x => x.Id == item.Id);
         Assert.Equal(firstRead.Version, staleRead.Version);
 
-        var winner = await firstService.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Winner" });
+        var winner = await firstService.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Winner", ExpectedVersion = firstRead.Version });
         Assert.Equal("Winner", winner?.AssigneeName);
 
         var conflict = await Assert.ThrowsAsync<WorkItemConcurrencyException>(() => staleService.UpdateAsync(
             item.Id,
             new UpdateWorkItemRequest
             {
+                ExpectedVersion = staleRead.Version,
                 Title = "Stale title",
                 Description = "Stale description",
                 Priority = "High"
@@ -219,7 +224,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
             services.AddScoped<IWorkItemService, ConcurrencyConflictWorkItemService>();
         }));
         using var client = conflictFactory.CreateClient();
-        using var response = await client.PostAsJsonAsync($"/api/v1/work-items/{Guid.NewGuid()}/status", new { status = "Done" });
+        using var response = await client.PostAsJsonAsync($"/api/v1/work-items/{Guid.NewGuid()}/status", new { status = "Done", expectedVersion = 1 });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -228,6 +233,102 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.Equal(WorkItemConcurrencyException.ConflictDetail, body.RootElement.GetProperty("detail").GetString());
         var responseText = body.RootElement.GetRawText();
         Assert.DoesNotContain(nameof(DbUpdateConcurrencyException), responseText);
+    }
+
+    [Theory]
+    [InlineData("patch")]
+    [InlineData("status")]
+    [InlineData("assign")]
+    public async Task StaleClientRepresentation_ReturnsConflictAndPreservesWinnerAndActivity(string operation)
+    {
+        await _factory.ResetDatabaseAsync();
+        var created = await CreateAsync("Initial", "Original details", "Medium", OperationsId, "Original assignee");
+        Assert.Equal(1, created.Version);
+        var clientA = await GetAsync(created.Id);
+        Assert.Equal(1, clientA.Version);
+
+        using var winningResponse = await _factory.Client.PatchAsJsonAsync($"/api/v1/work-items/{created.Id}", new
+        {
+            title = "Winning title",
+            description = clientA.Description,
+            priority = clientA.Priority,
+            categoryId = clientA.CategoryId,
+            expectedVersion = clientA.Version
+        });
+        Assert.Equal(HttpStatusCode.OK, winningResponse.StatusCode);
+        var winner = (await winningResponse.Content.ReadFromJsonAsync<WorkItemResponse>())!;
+        Assert.Equal(2, winner.Version);
+        var beforeActivity = (await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{created.Id}/activity"))!;
+
+        using var staleResponse = operation switch
+        {
+            "patch" => await _factory.Client.PatchAsJsonAsync($"/api/v1/work-items/{created.Id}", new
+            {
+                title = "Stale title",
+                description = "Stale details",
+                priority = "Critical",
+                categoryId = SupportId,
+                expectedVersion = clientA.Version
+            }),
+            "status" => await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{created.Id}/status", new { status = "InProgress", expectedVersion = clientA.Version }),
+            _ => await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{created.Id}/assign", new { assigneeName = "Stale assignee", expectedVersion = clientA.Version })
+        };
+
+        Assert.Equal(HttpStatusCode.Conflict, staleResponse.StatusCode);
+        Assert.Equal("application/problem+json", staleResponse.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(await staleResponse.Content.ReadAsStringAsync());
+        Assert.Equal("Work Item Concurrency Conflict", problem.RootElement.GetProperty("title").GetString());
+        Assert.Equal(WorkItemConcurrencyException.ConflictDetail, problem.RootElement.GetProperty("detail").GetString());
+        Assert.DoesNotContain("expectedVersion", problem.RootElement.GetRawText());
+        Assert.DoesNotContain(nameof(DbUpdateConcurrencyException), problem.RootElement.GetRawText());
+
+        var final = await GetAsync(created.Id);
+        Assert.Equal(JsonSerializer.Serialize(winner), JsonSerializer.Serialize(final));
+        var finalActivity = (await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{created.Id}/activity"))!;
+        Assert.Equal(beforeActivity.Select(x => x.Id), finalActivity.Select(x => x.Id));
+        Assert.Equal(new[] { "TitleChanged", "Created" }, finalActivity.Select(x => x.EventType));
+        var list = await ListAsync("");
+        Assert.Equal(2, Assert.Single(list.Items).Version);
+    }
+
+    [Theory]
+    [InlineData("patch", null)]
+    [InlineData("patch", "0")]
+    [InlineData("patch", "-1")]
+    [InlineData("patch", "\"invalid\"")]
+    [InlineData("status", null)]
+    [InlineData("status", "0")]
+    [InlineData("status", "-1")]
+    [InlineData("status", "\"invalid\"")]
+    [InlineData("assign", null)]
+    [InlineData("assign", "0")]
+    [InlineData("assign", "-1")]
+    [InlineData("assign", "\"invalid\"")]
+    public async Task InvalidExpectedVersion_ReturnsValidationProblem(string operation, string? versionJson)
+    {
+        await _factory.ResetDatabaseAsync();
+        var item = await CreateAsync("Validation item", null, "Medium", null, null);
+        var payload = new Dictionary<string, object?>
+        {
+            ["title"] = "Updated",
+            ["priority"] = "High",
+            ["status"] = "InProgress",
+            ["assigneeName"] = "Assignee"
+        };
+        if (versionJson is not null) payload["expectedVersion"] = JsonSerializer.Deserialize<JsonElement>(versionJson);
+        var path = $"/api/v1/work-items/{item.Id}" + (operation == "patch" ? "" : $"/{operation}");
+        using var request = new HttpRequestMessage(operation == "patch" ? HttpMethod.Patch : HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
+        };
+        using var response = await _factory.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.NotEmpty(problem.RootElement.GetProperty("errors").EnumerateObject());
+        Assert.Equal(1, (await GetAsync(item.Id)).Version);
+        Assert.Single((await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{item.Id}/activity"))!);
     }
 
     [Fact]
@@ -350,7 +451,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
 
     private async Task<WorkItemResponse> ChangeStatusAsync(Guid id, string status)
     {
-        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{id}/status", new { status });
+        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{id}/status", new { status, expectedVersion = (await GetAsync(id)).Version });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<WorkItemResponse>())!;
     }
@@ -360,10 +461,15 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         return (await _factory.Client.GetFromJsonAsync<PagedResult<WorkItemResponse>>($"/api/v1/work-items{query}"))!;
     }
 
-    private async Task PostAsync(string path, object payload)
+    private async Task<WorkItemResponse> GetAsync(Guid id) =>
+        (await _factory.Client.GetFromJsonAsync<WorkItemResponse>($"/api/v1/work-items/{id}"))!;
+
+    private async Task<WorkItemResponse> AssignAsync(Guid id, string? assigneeName)
     {
-        using var response = await _factory.Client.PostAsJsonAsync(path, payload);
+        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{id}/assign",
+            new { assigneeName, expectedVersion = (await GetAsync(id)).Version });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<WorkItemResponse>())!;
     }
 
     private sealed class ConcurrencyConflictWorkItemService : IWorkItemService
