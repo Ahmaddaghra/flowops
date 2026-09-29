@@ -104,7 +104,8 @@ export const SettingsPage: React.FC = () => {
           <CardContent className="text-sm text-slate-600 space-y-2">
             <p>
               FlowOps supports creating, assigning, searching, and moving work items
-              through a persisted lifecycle with server-side validation and activity history.
+              through a persisted lifecycle with server-side validation and activity
+              history.
             </p>
             <p className="text-xs text-slate-500">
               Authentication, identity-backed assignments, and comments are planned for

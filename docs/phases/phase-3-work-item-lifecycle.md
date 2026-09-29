@@ -39,6 +39,15 @@ Run backend verification from the repository root using the commands in [backend
 
 Import `docs/postman/FlowOps.postman_collection.json` into Postman. The companion `FlowOps.local.postman_environment.json` supplies the local API base URL. The collection includes lifecycle requests and captures a created work item ID for follow-up requests.
 
+## Manual browser acceptance
+
+The local React app was exercised against the migrated PostgreSQL database at desktop size and at a 390 × 844 mobile viewport:
+
+- Created a work item, edited its title, description, priority, and category, assigned and reassigned a display name, and verified the corresponding activity entries.
+- Exercised every allowed status edge through the UI: To Do → In Progress/Blocked, In Progress → Blocked/Done, and Blocked → In Progress/To Do. Confirmed Done exposes no next status. An attempted Done → To Do API request returned `409 application/problem+json`.
+- Applied search, status, priority, category, assignee, sort direction, and page-size controls; checked the URL state, next-page navigation, and state after reload.
+- Checked responsive mobile cards and stacked filters, keyboard access to the create dialog and pagination, and found no browser console warnings or errors.
+
 ## Scope boundary
 
 Authentication, authorization, real user references, comments, and dashboard aggregation remain future work. This phase intentionally provides an unauthenticated development/demo workflow, not production identity or access controls.

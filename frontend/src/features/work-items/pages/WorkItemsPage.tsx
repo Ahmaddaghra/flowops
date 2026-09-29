@@ -40,7 +40,7 @@ const sortOptions: NonNullable<WorkItemQuery['sort']>[] = [
   'priority',
   'status',
 ];
-const pageSizes = [10, 20, 50, 100];
+const pageSizes = [1, 10, 20, 50, 100];
 type NormalizedWorkItemQuery = WorkItemQuery &
   Required<Pick<WorkItemQuery, 'page' | 'pageSize' | 'sort' | 'direction'>>;
 

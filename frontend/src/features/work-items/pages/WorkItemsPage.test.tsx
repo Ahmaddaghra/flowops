@@ -130,19 +130,24 @@ describe('WorkItemsPage', () => {
       async (query: WorkItemQuery = {}) => ({
         items: [item],
         page: query.page ?? 1,
-        pageSize: 20,
+        pageSize: query.pageSize ?? 20,
         totalItems: 21,
-        totalPages: 2,
+        totalPages: 21,
       })
     );
-    renderPage();
+    renderPage('/work-items?pageSize=1');
     await screen.findAllByText(item.title);
+
+    expect(
+      (screen.getByRole('combobox', { name: 'Items per page' }) as HTMLSelectElement)
+        .value
+    ).toBe('1');
 
     await user.click(screen.getByRole('button', { name: 'Next' }));
 
     await waitFor(() => {
       expect(workItemsApi.list).toHaveBeenLastCalledWith(
-        expect.objectContaining({ page: 2 })
+        expect.objectContaining({ page: 2, pageSize: 1 })
       );
       expect(screen.getByTestId('query-string').textContent).toContain('page=2');
     });
