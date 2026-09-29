@@ -1,0 +1,135 @@
+{
+  "info": {
+    "_postman_id": "2a7a62a4-63eb-4cf8-a5d7-39c3cc4593d8",
+    "name": "FlowOps Phase 3",
+    "description": "Work item lifecycle, activity, categories, and server-side list queries. Select the local environment before sending requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "List active categories",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/categories"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Work items",
+      "item": [
+        {
+          "name": "List work items",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items?page=1&pageSize=20&sort=createdAt&direction=desc"
+          }
+        },
+        {
+          "name": "Search and filter work items",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items?search=login&status=InProgress&priority=High&categoryId={{categoryId}}&assignee=Ahmad&page=1&pageSize=10&sort=updatedAt&direction=desc"
+          }
+        },
+        {
+          "name": "Create work item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created with 201 and a Location header', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(pm.response.headers.get('Location')).to.be.ok;",
+                  "});",
+                  "if (pm.response.code === 201) { pm.environment.set('workItemId', pm.response.json().id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Investigate customer login issue\",\n  \"description\": \"Intermittent failures reported by customer\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"assigneeName\": \"Ahmad\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items"
+          }
+        },
+        {
+          "name": "Get work item detail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}"
+          }
+        },
+        {
+          "name": "Update descriptive fields",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Investigate login failures\",\n  \"description\": \"Reproduction steps are being collected\",\n  \"priority\": \"Critical\",\n  \"categoryId\": \"{{categoryId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}"
+          }
+        },
+        {
+          "name": "Change status to InProgress",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"InProgress\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status"
+          }
+        },
+        {
+          "name": "Assign work item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeName\": \"Ahmad\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
+          }
+        },
+        {
+          "name": "Unassign work item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeName\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
+          }
+        },
+        {
+          "name": "Get work item activity",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/activity"
+          }
+        }
+      ]
+    }
+  ]
+}
