@@ -8,38 +8,41 @@ This backlog converts the project plan into reviewable implementation units. Iss
 - [ ] `docs: finalize MVP acceptance criteria`
 - [ ] `docs: record initial architecture decisions`
 
-## Phase 1 — Backend Foundation
+## Phase 1 — Backend Foundation (Complete)
 
-1. `chore(api): scaffold ASP.NET Core solution and test projects`
-2. `feat(api): configure PostgreSQL and EF Core persistence`
-3. `feat(api): add initial domain entities and migrations`
-4. `feat(api): add health endpoint and OpenAPI documentation`
-5. `test(api): establish integration test harness`
-6. `ci(api): add backend build and test workflow`
+1. [x] `chore(api): scaffold ASP.NET Core solution and test projects`
+2. [x] `feat(api): configure PostgreSQL and EF Core persistence`
+3. [x] `feat(api): add initial domain entities and migrations`
+4. [x] `feat(api): add health endpoint and OpenAPI documentation`
+5. [x] `test(api): establish integration test harness`
+6. [x] `ci(api): add backend build and test workflow`
 
 **Phase exit:** clean checkout builds, migrates database, loads Swagger, and passes CI.
 
-## Phase 2 — Frontend Foundation
+## Phase 2 — Frontend Foundation (Complete)
 
-1. `chore(web): scaffold React TypeScript application`
-2. `style(web): configure Tailwind CSS and design tokens`
-3. `feat(web): add responsive application shell and routing`
-4. `feat(web): add reusable form and feedback components`
-5. `feat(web): add typed API client and error handling`
-6. `ci(web): add frontend lint build and test workflow`
+1. [x] `chore(web): scaffold React TypeScript application`
+2. [x] `style(web): configure Tailwind CSS and design tokens`
+3. [x] `feat(web): add responsive application shell and routing`
+4. [x] `feat(web): add reusable form and feedback components`
+5. [x] `feat(web): add typed API client and error handling`
+6. [x] `ci(web): add frontend lint build and test workflow`
 
 **Phase exit:** responsive shell builds cleanly and has predictable loading/error behavior.
 
-## Phase 3 — Core Work Item Vertical Slices
+## Phase 3 — Core Work Item Vertical Slices (Complete)
 
-1. `feat(work-items): create work item`
-2. `feat(work-items): list and paginate work items`
-3. `feat(work-items): add details view`
-4. `feat(work-items): edit core fields`
-5. `feat(work-items): enforce status transitions`
-6. `feat(work-items): assign users`
-7. `feat(work-items): add search filters and sorting`
-8. `feat(activity): record and display work item history`
+1. [x] `feat(work-items): create work item`
+2. [x] `feat(work-items): list and paginate work items`
+3. [x] `feat(work-items): add details view`
+4. [x] `feat(work-items): edit core fields`
+5. [x] `feat(work-items): enforce status transitions`
+6. [x] `feat(work-items): assign display names`
+7. [x] `feat(work-items): add search filters and sorting`
+8. [x] `feat(activity): record and display work item history`
+9. [x] `test(api): cover lifecycle with PostgreSQL integration tests`
+10. [x] `test(web): cover critical lifecycle UI paths`
+11. [x] `docs(api): publish v1 contract and Postman collection`
 
 Each issue should include API, persistence, tests, and UI when applicable rather than splitting a user capability by technology layer.
 
@@ -51,7 +54,7 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 2. `feat(auth): enforce role and ownership rules`
 3. `feat(comments): add work item comments`
 4. `test(api): add authorization and negative-path regression cases`
-5. `test(postman): publish API collection and environment template`
+5. [x] `test(postman): publish API collection and environment template` (delivered in Phase 3)
 6. `docs(qa): add manual test suite and representative bug reports`
 
 **Phase exit:** protected workflows are verified both manually and through integration tests.

@@ -1,0 +1,195 @@
+{
+  "info": {
+    "_postman_id": "2a7a62a4-63eb-4cf8-a5d7-39c3cc4593d8",
+    "name": "FlowOps Phase 3",
+    "description": "Work item lifecycle, activity, categories, and server-side list queries. Select the local environment before sending requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "List active categories",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/categories"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Work items",
+      "item": [
+        {
+          "name": "List work items",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items?page=1&pageSize=20&sort=createdAt&direction=desc"
+          }
+        },
+        {
+          "name": "Search and filter work items",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items?search=login&status=InProgress&priority=High&categoryId={{categoryId}}&assignee=Ahmad&page=1&pageSize=10&sort=updatedAt&direction=desc"
+          }
+        },
+        {
+          "name": "Create work item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created with 201 and a Location header', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(pm.response.headers.get('Location')).to.be.ok;",
+                  "});",
+                  "pm.test('New work item starts at version 1', function () { pm.expect(pm.response.json().version).to.eql(1); });",
+                  "if (pm.response.code === 201) { const item = pm.response.json(); pm.environment.set('workItemId', item.id); pm.environment.set('workItemVersion', item.version); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Investigate customer login issue\",\n  \"description\": \"Intermittent failures reported by customer\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"assigneeName\": \"Ahmad\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items"
+          }
+        },
+        {
+          "name": "Get work item detail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const item = pm.response.json(); pm.environment.set('workItemId', item.id); pm.environment.set('workItemVersion', item.version); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update descriptive fields",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Investigate login failures\",\n  \"description\": \"Reproduction steps are being collected\",\n  \"priority\": \"Critical\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change status to InProgress",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"InProgress\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign work item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeName\": \"Ahmad\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unassign work item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeName\": null,\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get work item activity",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/activity"
+          }
+        }
+      ]
+    }
+  ]
+}

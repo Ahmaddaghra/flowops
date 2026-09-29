@@ -13,6 +13,10 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 
         builder.HasKey(x => x.Id);
 
+        builder.Property(x => x.Version)
+            .HasDefaultValue(1L)
+            .IsConcurrencyToken();
+
         builder.Property(x => x.Title)
             .IsRequired()
             .HasMaxLength(WorkItem.MaxTitleLength);
@@ -22,6 +26,12 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 
         builder.Property(x => x.AssigneeName)
             .HasMaxLength(WorkItem.MaxAssigneeNameLength);
+
+        builder.Property(x => x.CategoryId);
+        builder.HasOne(x => x.Category)
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(x => x.Status)
             .HasConversion<string>()
@@ -41,5 +51,8 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 
         builder.HasIndex(x => x.Status);
         builder.HasIndex(x => x.CreatedAtUtc);
+        builder.HasIndex(x => x.Priority);
+        builder.HasIndex(x => x.CategoryId);
+        builder.HasIndex(x => x.AssigneeName);
     }
 }

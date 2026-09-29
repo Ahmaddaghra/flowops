@@ -13,7 +13,10 @@ public class CreateWorkItemRequest
     [StringLength(WorkItem.MaxDescriptionLength, ErrorMessage = "Description cannot exceed 4000 characters.")]
     public string? Description { get; set; }
 
+    [Required]
     public string Priority { get; set; } = nameof(WorkItemPriority.Medium);
+
+    public Guid? CategoryId { get; set; }
 
     [StringLength(WorkItem.MaxAssigneeNameLength, ErrorMessage = "AssigneeName cannot exceed 100 characters.")]
     public string? AssigneeName { get; set; }

@@ -72,7 +72,7 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center gap-2.5 text-xs text-slate-400">
           <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
           <div className="flex flex-col">
-            <span className="font-medium text-slate-300">Phase 2 Foundation</span>
+            <span className="font-medium text-slate-300">Phase 3 Lifecycle</span>
             <span className="text-[10px] text-slate-500">ASP.NET 10 + React 19</span>
           </div>
         </div>

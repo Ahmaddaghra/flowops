@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FlowOps.Application.DTOs;
+using FlowOps.Application.Exceptions;
 using FlowOps.Application.Interfaces;
 using FlowOps.Application.Services;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
+using FlowOps.Domain.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -53,6 +55,7 @@ public class WorkItemServiceTests
         Assert.NotNull(result);
         Assert.NotEqual(Guid.Empty, result.Id);
         Assert.Equal("Implement login page", result.Title);
+        Assert.Equal(1, result.Version);
         Assert.Equal("User authentication workflow", result.Description);
         Assert.Equal(nameof(WorkItemStatus.Todo), result.Status);
         Assert.Equal(nameof(WorkItemPriority.High), result.Priority);
@@ -92,24 +95,34 @@ public class WorkItemServiceTests
     }
 
     [Fact]
-    public async Task GetAllAsync_ReturnsAllWorkItemsOrderedByCreatedAtDescending()
+    public async Task ListAsync_ReturnsPageItemsAndMetadata()
     {
         // Arrange
         var item1 = new WorkItem("First Item", createdAtUtc: DateTime.UtcNow.AddHours(-2));
         var item2 = new WorkItem("Second Item", createdAtUtc: DateTime.UtcNow);
 
         _mockStore
-            .Setup(x => x.ListAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<WorkItem> { item2, item1 });
+            .Setup(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<WorkItem>
+            {
+                Items = new List<WorkItem> { item2, item1 },
+                Page = 1,
+                PageSize = 20,
+                TotalItems = 2,
+                TotalPages = 1
+            });
 
         // Act
-        var results = await _service.GetAllAsync();
+        var results = await _service.ListAsync(new WorkItemQuery());
 
         // Assert
-        Assert.Equal(2, results.Count);
-        Assert.Equal("Second Item", results[0].Title);
-        Assert.Equal("First Item", results[1].Title);
-        _mockStore.Verify(x => x.ListAsync(It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(2, results.Items.Count);
+        Assert.Equal("Second Item", results.Items[0].Title);
+        Assert.All(results.Items, item => Assert.Equal(1, item.Version));
+        Assert.Equal("First Item", results.Items[1].Title);
+        Assert.Equal(2, results.TotalItems);
+        Assert.Equal(1, results.TotalPages);
+        _mockStore.Verify(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -127,6 +140,7 @@ public class WorkItemServiceTests
         // Assert
         Assert.NotNull(result);
         Assert.Equal(item.Id, result.Id);
+        Assert.Equal(item.Version, result.Version);
         Assert.Equal("Existing Item", result.Title);
         _mockStore.Verify(x => x.GetByIdAsync(item.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -146,5 +160,176 @@ public class WorkItemServiceTests
         // Assert
         Assert.Null(result);
         _mockStore.Verify(x => x.GetByIdAsync(searchId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_AddsCreatedActivityAtomically()
+    {
+        ActivityEvent? savedActivity = null;
+        _mockStore.Setup(x => x.AddAsync(It.IsAny<WorkItem>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ActivityEvent, CancellationToken>((activity, _) => savedActivity = activity)
+            .Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var result = await _service.CreateAsync(new CreateWorkItemRequest { Title = "Created", Priority = "High" });
+
+        Assert.Equal(result.Id, savedActivity?.WorkItemId);
+        Assert.Equal(ActivityEventType.Created, savedActivity?.EventType);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RecordsOnlyMeaningfulFieldChanges()
+    {
+        var item = new WorkItem("Before", description: "Details");
+        var category = new Category(Guid.NewGuid(), "Support");
+        var events = new List<ActivityEvent>();
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _mockStore.Setup(x => x.GetCategoryByIdAsync(category.Id, It.IsAny<CancellationToken>())).ReturnsAsync(category);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ActivityEvent, CancellationToken>((activity, _) => events.Add(activity)).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        await _service.UpdateAsync(item.Id, new UpdateWorkItemRequest
+        {
+            ExpectedVersion = item.Version,
+            Title = "After",
+            Description = "Details",
+            Priority = "High",
+            CategoryId = category.Id
+        });
+
+        Assert.Equal(new[] { ActivityEventType.TitleChanged, ActivityEventType.PriorityChanged, ActivityEventType.CategoryChanged },
+            events.Select(x => x.EventType));
+        Assert.Contains("Uncategorized to Support", events[^1].Description);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NoOp_DoesNotSaveOrAddActivity()
+    {
+        var item = new WorkItem("Same", description: "Details", priority: WorkItemPriority.High);
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+
+        await _service.UpdateAsync(item.Id, new UpdateWorkItemRequest
+        {
+            ExpectedVersion = item.Version,
+            Title = "Same",
+            Description = "Details",
+            Priority = "High"
+        });
+
+        _mockStore.Verify(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_RejectsInvalidTransitionAndDoesNotSave()
+    {
+        var item = new WorkItem("Done", status: WorkItemStatus.Done);
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+
+        await Assert.ThrowsAsync<InvalidWorkItemTransitionException>(() =>
+            _service.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "Todo", ExpectedVersion = item.Version }));
+
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AssignAsync_SupportsAssignmentAndUnassignment()
+    {
+        var item = new WorkItem("Assigned");
+        var events = new List<ActivityEvent>();
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<ActivityEvent, CancellationToken>((activity, _) => events.Add(activity)).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Ahmad", ExpectedVersion = item.Version });
+        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = null, ExpectedVersion = item.Version });
+
+        Assert.Null(item.AssigneeName);
+        Assert.Equal(new[] { "Assigned to Ahmad", "Work item unassigned" }, events.Select(x => x.Description));
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("status")]
+    [InlineData("assign")]
+    public async Task MatchingExpectedVersion_MutatesAndReturnsCurrentVersion(string operation)
+    {
+        var item = new WorkItem("Before");
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _mockStore.Setup(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var result = operation switch
+        {
+            "update" => await _service.UpdateAsync(item.Id, new UpdateWorkItemRequest { Title = "After", Priority = "Medium", ExpectedVersion = 1 }),
+            "status" => await _service.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "InProgress", ExpectedVersion = 1 }),
+            _ => await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Winner", ExpectedVersion = 1 })
+        };
+
+        Assert.NotNull(result);
+        Assert.Equal(2, item.Version);
+        Assert.Equal(item.Version, result.Version);
+        _mockStore.Verify(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()), Times.Once);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("status")]
+    [InlineData("assign")]
+    public async Task StaleExpectedVersion_ConflictsBeforeMutationActivityOrSave(string operation)
+    {
+        var item = new WorkItem("Before", description: "Original", assigneeName: "Original assignee");
+        item.ChangeTitle("Winning title");
+        var timestamp = item.UpdatedAtUtc;
+        _mockStore.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+
+        await Assert.ThrowsAsync<WorkItemConcurrencyException>(() => operation switch
+        {
+            "update" => _service.UpdateAsync(item.Id, new UpdateWorkItemRequest
+            {
+                Title = "Stale title",
+                Description = "Stale description",
+                Priority = "High",
+                CategoryId = Guid.NewGuid(),
+                ExpectedVersion = 1
+            }),
+            "status" => _service.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "InProgress", ExpectedVersion = 1 }),
+            _ => _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Stale assignee", ExpectedVersion = 1 })
+        });
+
+        Assert.Equal("Winning title", item.Title);
+        Assert.Equal("Original", item.Description);
+        Assert.Equal(WorkItemPriority.Medium, item.Priority);
+        Assert.Null(item.CategoryId);
+        Assert.Equal(WorkItemStatus.Todo, item.Status);
+        Assert.Equal("Original assignee", item.AssigneeName);
+        Assert.Equal(2, item.Version);
+        Assert.Equal(timestamp, item.UpdatedAtUtc);
+        _mockStore.Verify(x => x.GetCategoryByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockStore.Verify(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(1, 101)]
+    public async Task ListAsync_RejectsInvalidPagination(int page, int pageSize)
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ListAsync(new WorkItemQuery { Page = page, PageSize = pageSize }));
+        _mockStore.Verify(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListAsync_RejectsUnsupportedSort()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ListAsync(new WorkItemQuery { Sort = "randomField" }));
+        _mockStore.Verify(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

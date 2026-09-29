@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FlowOps.Application.DTOs;
@@ -8,7 +7,12 @@ namespace FlowOps.Application.Interfaces;
 
 public interface IWorkItemService
 {
-    Task<IReadOnlyList<WorkItemResponse>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<PagedResult<WorkItemResponse>> ListAsync(WorkItemQuery query, CancellationToken cancellationToken = default);
     Task<WorkItemResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<WorkItemResponse> CreateAsync(CreateWorkItemRequest request, CancellationToken cancellationToken = default);
+    Task<WorkItemResponse?> UpdateAsync(Guid id, UpdateWorkItemRequest request, CancellationToken cancellationToken = default);
+    Task<WorkItemResponse?> ChangeStatusAsync(Guid id, ChangeWorkItemStatusRequest request, CancellationToken cancellationToken = default);
+    Task<WorkItemResponse?> AssignAsync(Guid id, AssignWorkItemRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ActivityEventResponse>?> GetActivityAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CategoryResponse>> GetCategoriesAsync(CancellationToken cancellationToken = default);
 }

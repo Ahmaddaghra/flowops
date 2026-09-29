@@ -8,6 +8,7 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
+- **Phase 3 — Work Item Lifecycle (Implemented; PR #4 open)**
 
 ### Tech Stack Summary
 
@@ -15,7 +16,7 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 - **Framework:** ASP.NET Core 10 Web API (.NET 10.0.401 SDK / 10.0.12 runtime)
 - **Persistence:** Entity Framework Core 10.0.12 + PostgreSQL 17 (via `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3)
 - **API Tooling:** OpenAPI / Swagger UI (Swashbuckle 7.3.1, enabled in Development)
-- **Testing:** xUnit 2.9.3, Moq 4.20.72 (16 isolated unit tests, 0 EF Core test dependencies)
+- **Testing:** xUnit 2.9.3, Moq 4.20.72, and PostgreSQL-backed API integration tests
 - **CI / Automation:** GitHub Actions (`.github/workflows/backend-ci.yml`)
 - **Infrastructure:** Docker Compose (PostgreSQL 17-alpine with non-superuser role isolation)
 
@@ -29,6 +30,7 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 - **Class Merging:** `clsx` + `tailwind-merge`
 - **Linting & Code Quality:** ESLint 9 (`@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`)
 - **Formatting:** Prettier (`.prettierrc`)
+- **Component Tests:** Vitest 5 with React Testing Library
 - **CI / Automation:** GitHub Actions (`.github/workflows/frontend-ci.yml`)
 
 ---
@@ -75,11 +77,13 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - **Formatting Verification:** Enforces C# style rules and fails on violations (`dotnet format --verify-no-changes --no-restore`).
 - **Build:** Compiles all projects (`dotnet build --no-restore`).
 - **Unit Tests:** Executes isolated unit tests (`dotnet test --no-build`).
+- **PostgreSQL Integration Tests:** Starts PostgreSQL 17 and runs API tests against an isolated schema.
 
 ### Frontend CI (`.github/workflows/frontend-ci.yml`)
 - **Install:** Installs deterministic dependencies via `npm ci`.
 - **Formatting Verification:** Verifies formatting against Prettier (`npm run format:check`).
 - **Linting:** Runs ESLint rules (`npm run lint`).
+- **Tests:** Runs frontend component and page tests (`npm run test -- --run`).
 - **Build:** Compiles TypeScript and builds production bundle (`npm run build`).
 
 ---
@@ -99,7 +103,7 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 
 ## Implemented vs Planned Features
 
-### Implemented (Phase 1 & Phase 2)
+### Implemented (Phases 1–3)
 - [x] Layered ASP.NET Core backend solution (`Domain`, `Application`, `Infrastructure`, `Api`)
 - [x] Core `WorkItem` domain entity with rich validation and strict UTC invariants
 - [x] Use-case oriented persistence abstraction (`IWorkItemStore`) in Application layer
@@ -108,20 +112,20 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Versioned REST API (`/api/v1/health`, `/api/v1/work-items`)
 - [x] Centralized RFC 7807 `ProblemDetails` exception handling with no stack trace leakage
 - [x] Interactive Swagger UI documentation at `/swagger` (Development environment)
-- [x] 16 decoupled xUnit unit tests covering domain invariants and application services
+- [x] Domain/application unit tests and PostgreSQL API integration tests for lifecycle rules, validation, queries, and migration compatibility
 - [x] GitHub Actions automated backend CI workflow (restore, format check, build, test)
 - [x] React 19 + TypeScript 5 + Vite 6 frontend application shell
 - [x] Tailwind CSS restrained B2B operations design system & responsive layout (desktop & mobile)
 - [x] Reusable UI primitives (`Button`, `Badge`, `Card`, `Table`, `Skeleton`, `EmptyState`, `ErrorState`, `PageHeader`, `Input`, `Select`, `Modal`)
 - [x] Typed API client with automatic RFC 7807 `ProblemDetails` error extraction
-- [x] Read-only work items integration: `GET /api/v1/work-items`, `GET /api/v1/work-items/{id}`, and `GET /api/v1/health`
-- [x] Work items list view (high-density table for desktop, cards for mobile) with refresh, loading, empty, and retryable error states
-- [x] Read-only work item detail view with ID copying
+- [x] Versioned work item lifecycle API for creation, updates, assignment, status transitions, activity, categories, and paged queries
+- [x] Work item list with server-side search, filters, sorting, pagination, and resilient request states
+- [x] Create/edit forms, detail and activity timeline, assignment, and validated status workflow
+- [x] Frontend component/page tests for critical lifecycle paths and states
 - [x] Dashboard placeholder, settings/system status page, and not-found page
-- [x] Frontend CI workflow (ESLint, Prettier, TypeScript compilation, Vite build)
+- [x] Frontend CI workflow (ESLint, Prettier, Vitest, TypeScript compilation, Vite build)
 
 ### Planned (Future Phases)
-- [ ] Create and edit work items, status transitions, assignment changes, search, filtering, sorting, pagination, and activity/history (Phase 3)
 - [ ] JWT authentication, user identity & work item comments (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
@@ -132,7 +136,7 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 ### 1. Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/) (Version 10.0.401 or compatible)
-- [Node.js](https://nodejs.org/) (Version 20+ or 22 LTS recommended) and `npm`
+- [Node.js](https://nodejs.org/) 22.22.2 (the version in `frontend/.nvmrc` used by CI) and `npm`. The frontend also supports later 22.x releases, 24.15.0 or later 24.x releases, and 26+. Its locked test dependencies require these ranges; `frontend/.npmrc` enforces the `package.json` engine prerequisite during installation.
 - [Docker Desktop](https://www.docker.com/) or local [PostgreSQL 17](https://www.postgresql.org/)
 
 ### 2. Database Setup
@@ -172,7 +176,7 @@ In a separate terminal:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -194,6 +198,9 @@ npm run lint
 
 # Check formatting with Prettier
 npm run format:check
+
+# Run frontend component and page tests
+npm run test -- --run
 
 # Auto-format with Prettier
 npm run format
@@ -217,7 +224,8 @@ flowops/
 │   │   ├── FlowOps.Infrastructure/  # EF Core 10 DbContext, WorkItemStore & PostgreSQL mappings
 │   │   └── FlowOps.Api/             # Controllers, ProblemDetails middleware & Swagger
 │   └── tests/
-│       └── FlowOps.UnitTests/       # xUnit unit tests (isolated, Moq-based)
+│       ├── FlowOps.UnitTests/       # xUnit domain/application unit tests
+│       └── FlowOps.IntegrationTests/ # PostgreSQL-backed API integration tests
 ├── frontend/                        # React 19 + TypeScript 5 + Vite 6 client
 │   ├── src/
 │   │   ├── app/                     # App entry and router initialization
@@ -240,7 +248,8 @@ flowops/
 │   ├── API_DESIGN.md                # REST conventions and endpoint plan
 │   └── phases/
 │       ├── phase-1-backend-foundation.md # Phase 1 documentation
-│       └── phase-2-frontend-foundation.md # Phase 2 documentation
+│       ├── phase-2-frontend-foundation.md # Phase 2 documentation
+│       └── phase-3-work-item-lifecycle.md # Phase 3 implementation and verification
 ├── docker-compose.yml               # Hardened local PostgreSQL container configuration
 ├── .env.example                     # Local development environment template
 ├── CONTRIBUTING.md

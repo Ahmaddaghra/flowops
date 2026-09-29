@@ -30,4 +30,39 @@ jobs:
         run: dotnet build backend/FlowOps.sln --no-restore
 
       - name: Run unit tests
-        run: dotnet test backend/FlowOps.sln --no-build
+        run: dotnet test backend/tests/FlowOps.UnitTests/FlowOps.UnitTests.csproj --no-build
+
+  integration-tests:
+    name: PostgreSQL Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: flowops_integration
+          POSTGRES_USER: flowops_test
+          POSTGRES_PASSWORD: flowops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flowops_test -d flowops_integration"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      FLOWOPS_TEST_CONNECTION: Host=localhost;Port=5432;Database=flowops_integration;Username=flowops_test;Password=flowops_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore integration test dependencies
+        run: dotnet restore backend/tests/FlowOps.IntegrationTests/FlowOps.IntegrationTests.csproj
+
+      - name: Run PostgreSQL API integration tests
+        run: dotnet test backend/tests/FlowOps.IntegrationTests/FlowOps.IntegrationTests.csproj --no-restore

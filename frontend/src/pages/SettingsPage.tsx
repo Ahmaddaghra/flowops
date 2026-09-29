@@ -98,17 +98,18 @@ export const SettingsPage: React.FC = () => {
           <CardHeader>
             <div className="flex items-center gap-2">
               <Shield className="h-4 w-4 text-slate-500" />
-              <CardTitle className="text-base">Phase 2 Operational Scope</CardTitle>
+              <CardTitle className="text-base">Phase 3 Operational Scope</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="text-sm text-slate-600 space-y-2">
             <p>
-              FlowOps Phase 2 establishes the core frontend foundation, typed API
-              communication, responsive application shell, and reusable UI primitives.
+              FlowOps supports creating, assigning, searching, and moving work items
+              through a persisted lifecycle with server-side validation and activity
+              history.
             </p>
             <p className="text-xs text-slate-500">
-              User identity authentication, team management, and organization settings
-              will be integrated in Phase 4.
+              Authentication, identity-backed assignments, and comments are planned for
+              Phase 4.
             </p>
           </CardContent>
         </Card>

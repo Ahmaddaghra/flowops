@@ -33,6 +33,8 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description = "Portfolio-grade full-stack workflow management platform REST API."
     });
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, $"{typeof(FlowOps.Api.Controllers.v1.WorkItemsController).Assembly.GetName().Name}.xml");
+    if (File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
 });
 
 var app = builder.Build();
@@ -59,3 +61,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

@@ -30,6 +30,9 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({ item }) => {
         {item.description && (
           <p className="text-xs text-slate-500 line-clamp-2 mb-3">{item.description}</p>
         )}
+        {item.categoryName && (
+          <p className="text-xs text-slate-500 mb-2">Category: {item.categoryName}</p>
+        )}
         <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
           <div className="flex items-center gap-1.5">
             <User className="h-3.5 w-3.5 text-slate-400" />
