@@ -5,6 +5,9 @@ namespace FlowOps.Application.DTOs;
 
 public class UpdateWorkItemRequest
 {
+    [Range(1, long.MaxValue)]
+    public long ExpectedVersion { get; set; }
+
     [Required]
     [StringLength(WorkItem.MaxTitleLength)]
     public string Title { get; set; } = string.Empty;

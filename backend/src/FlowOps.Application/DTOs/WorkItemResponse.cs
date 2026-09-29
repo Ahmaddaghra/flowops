@@ -6,6 +6,7 @@ namespace FlowOps.Application.DTOs;
 public class WorkItemResponse
 {
     public Guid Id { get; set; }
+    public long Version { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Status { get; set; } = string.Empty;
@@ -21,6 +22,7 @@ public class WorkItemResponse
         return new WorkItemResponse
         {
             Id = entity.Id,
+            Version = entity.Version,
             Title = entity.Title,
             Description = entity.Description,
             Status = entity.Status.ToString(),

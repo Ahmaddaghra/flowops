@@ -1,4 +1,5 @@
 using FlowOps.Application.DTOs;
+using FlowOps.Application.Exceptions;
 using FlowOps.Application.Interfaces;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
@@ -72,6 +73,7 @@ public class WorkItemService : IWorkItemService
         var item = await _store.GetByIdForUpdateAsync(id, cancellationToken);
         if (item is null) return null;
 
+        ValidateExpectedVersion(item, request.ExpectedVersion);
         var priority = ParsePriority(request.Priority, nameof(request.Priority));
         var previousCategoryName = item.Category?.Name;
         var categoryName = request.CategoryId == item.CategoryId ? previousCategoryName : null;
@@ -116,6 +118,7 @@ public class WorkItemService : IWorkItemService
         var item = await _store.GetByIdForUpdateAsync(id, cancellationToken);
         if (item is null) return null;
 
+        ValidateExpectedVersion(item, request.ExpectedVersion);
         var status = ParseStatus(request.Status, nameof(request.Status));
         var previous = item.Status;
         if (item.ChangeStatus(status))
@@ -133,6 +136,7 @@ public class WorkItemService : IWorkItemService
         var item = await _store.GetByIdForUpdateAsync(id, cancellationToken);
         if (item is null) return null;
 
+        ValidateExpectedVersion(item, request.ExpectedVersion);
         var previous = item.AssigneeName;
         var next = string.IsNullOrWhiteSpace(request.AssigneeName) ? null : request.AssigneeName.Trim();
         if (item.Assign(request.AssigneeName))
@@ -184,6 +188,14 @@ public class WorkItemService : IWorkItemService
 
     private Task AddActivityAsync(Guid workItemId, ActivityEventType type, string description, CancellationToken cancellationToken) =>
         _store.AddActivityEventAsync(new ActivityEvent(workItemId, type, description), cancellationToken);
+
+    private static void ValidateExpectedVersion(WorkItem item, long expectedVersion)
+    {
+        if (expectedVersion < 1)
+            throw new ArgumentException("ExpectedVersion must be at least 1.", "expectedVersion");
+        if (expectedVersion != item.Version)
+            throw new WorkItemConcurrencyException();
+    }
 
     private static WorkItemPriority ParsePriority(string value, string field)
     {
