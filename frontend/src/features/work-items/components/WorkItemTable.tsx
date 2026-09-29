@@ -25,6 +25,7 @@ export const WorkItemTable: React.FC<WorkItemTableProps> = ({ items }) => {
         <TableRow>
           <TableHead className="w-[100px]">ID</TableHead>
           <TableHead>Title</TableHead>
+          <TableHead className="w-[130px]">Category</TableHead>
           <TableHead className="w-[130px]">Status</TableHead>
           <TableHead className="w-[110px]">Priority</TableHead>
           <TableHead className="w-[160px]">Assignee</TableHead>
@@ -54,6 +55,9 @@ export const WorkItemTable: React.FC<WorkItemTableProps> = ({ items }) => {
                   {item.description}
                 </p>
               )}
+            </TableCell>
+            <TableCell className="text-xs text-slate-600">
+              {item.categoryName || <span className="text-slate-400 italic">None</span>}
             </TableCell>
             <TableCell>
               <WorkItemStatusBadge status={item.status} />

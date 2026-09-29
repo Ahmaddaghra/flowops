@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { RefreshCw, Plus } from 'lucide-react';
 import { workItemsApi } from '@/lib/api/workItems';
-import { WorkItem } from '@/types/workItems';
+import { PagedResult, WorkItem } from '@/types/workItems';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -9,36 +10,35 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { WorkItemTable } from '../components/WorkItemTable';
 import { WorkItemCard } from '../components/WorkItemCard';
-import { RefreshCw } from 'lucide-react';
+import { CreateWorkItemModal } from '../components/CreateWorkItemModal';
 import { ApiError } from '@/types/api';
 
+const emptyPage: PagedResult<WorkItem> = {
+  items: [],
+  page: 1,
+  pageSize: 20,
+  totalItems: 0,
+  totalPages: 0,
+};
+
 export const WorkItemsPage: React.FC = () => {
-  const [items, setItems] = useState<WorkItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [result, setResult] = useState<PagedResult<WorkItem>>(emptyPage);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchItems = useCallback(async (isBackground = false) => {
-    if (isBackground) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
-    }
+  const fetchItems = useCallback(async (background = false) => {
+    if (background) setIsRefreshing(true);
+    else setIsLoading(true);
     setError(null);
 
     try {
-      const data = await workItemsApi.list();
-      setItems(data);
+      setResult(await workItemsApi.list());
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError(
-          err.problemDetails?.detail || err.message || 'Failed to load work items.'
-        );
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred while loading work items.');
-      }
+      if (err instanceof ApiError) setError(err.problemDetails?.detail || err.message);
+      else if (err instanceof Error) setError(err.message);
+      else setError('An unexpected error occurred while loading work items.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -46,88 +46,99 @@ export const WorkItemsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchItems();
+    void fetchItems();
   }, [fetchItems]);
+
+  const handleCreated = () => {
+    void fetchItems(true);
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Work Items"
-        description="Review operational work across your team."
+        description="Create, assign, and move operational work through its lifecycle."
         badge={
           !isLoading && !error ? (
             <Badge variant="neutral" size="sm">
-              {items.length} {items.length === 1 ? 'item' : 'items'}
+              {result.totalItems} {result.totalItems === 1 ? 'item' : 'items'}
             </Badge>
           ) : undefined
         }
         action={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchItems(true)}
-            isLoading={isRefreshing}
-            leftIcon={
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
-              />
-            }
-            disabled={isLoading || isRefreshing}
-          >
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchItems(true)}
+              isLoading={isRefreshing}
+              leftIcon={
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
+                />
+              }
+              disabled={isLoading || isRefreshing}
+            >
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              leftIcon={<Plus className="h-4 w-4" />}
+            >
+              Create work item
+            </Button>
+          </div>
         }
       />
 
-      {/* Loading Skeleton */}
       {isLoading && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
-            <Skeleton className="h-6 w-1/4" />
-            <div className="space-y-2 pt-2">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          </div>
+        <div
+          className="space-y-3 rounded-lg border border-slate-200 bg-white p-4"
+          role="status"
+          aria-label="Loading work items"
+        >
+          <Skeleton className="h-6 w-1/4" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
         </div>
       )}
 
-      {/* Error State */}
       {!isLoading && error && (
         <ErrorState
           title="Could not load work items"
           message={error}
-          onRetry={() => fetchItems()}
+          onRetry={() => void fetchItems()}
         />
       )}
 
-      {/* Empty State */}
-      {!isLoading && !error && items.length === 0 && (
+      {!isLoading && !error && result.items.length === 0 && (
         <EmptyState
           title="No work items yet"
-          description="Work item creation will be introduced in Phase 3."
+          description="Create the first item to start tracking work."
+          action={<Button onClick={() => setIsCreateOpen(true)}>Create work item</Button>}
         />
       )}
 
-      {/* Populated Content */}
-      {!isLoading && !error && items.length > 0 && (
+      {!isLoading && !error && result.items.length > 0 && (
         <>
-          {/* Desktop Table View */}
           <div className="hidden md:block">
-            <WorkItemTable items={items} />
+            <WorkItemTable items={result.items} />
           </div>
-
-          {/* Mobile Card View */}
           <div className="grid grid-cols-1 gap-3 md:hidden">
-            {items.map((item) => (
+            {result.items.map((item) => (
               <WorkItemCard key={item.id} item={item} />
             ))}
           </div>
         </>
       )}
+
+      <CreateWorkItemModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onCreated={handleCreated}
+      />
     </div>
   );
 };
