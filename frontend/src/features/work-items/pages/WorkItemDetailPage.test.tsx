@@ -439,6 +439,89 @@ describe('WorkItemDetailPage', () => {
     ).toBeNull();
   });
 
+  it.each(['status', 'assignment'])(
+    'scopes a pending %s mutation to its route and ignores its late completion',
+    async (operation) => {
+      const user = userEvent.setup();
+      let resolveFirst: ((value: WorkItem) => void) | undefined;
+      let rejectFirst: ((error: unknown) => void) | undefined;
+      let resolveSecond: ((value: WorkItem) => void) | undefined;
+      const first = new Promise<WorkItem>((resolve, reject) => {
+        resolveFirst = resolve;
+        rejectFirst = reject;
+      });
+      const second = new Promise<WorkItem>((resolve) => {
+        resolveSecond = resolve;
+      });
+      const mutation =
+        operation === 'status'
+          ? vi.mocked(workItemsApi.changeStatus)
+          : vi.mocked(workItemsApi.assign);
+      mutation.mockReturnValueOnce(first).mockReturnValueOnce(second);
+      vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
+        id === secondItem.id ? secondItem : item
+      );
+      vi.mocked(workItemsApi.getActivity).mockImplementation(async (id) =>
+        id === secondItem.id ? secondActivity : activity
+      );
+      const startMutation = async () => {
+        if (operation === 'status')
+          await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+        else {
+          await user.clear(screen.getByLabelText('Assignee name'));
+          await user.type(screen.getByLabelText('Assignee name'), 'Sara');
+          await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+        }
+      };
+      renderDetail();
+      await screen.findByRole('heading', { name: item.title });
+      await startMutation();
+      await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+      await screen.findByRole('heading', { name: secondItem.title });
+      const control = operation === 'status' ? 'Move to In Progress' : 'Unassign';
+      expect(screen.getByRole('button', { name: control })).toHaveProperty(
+        'disabled',
+        false
+      );
+
+      await startMutation();
+      expect(screen.getByRole('button', { name: control })).toHaveProperty(
+        'disabled',
+        true
+      );
+      await act(async () => {
+        if (operation === 'status')
+          resolveFirst?.({
+            ...item,
+            version: 4,
+            title: 'Late first-item response',
+            status: 'InProgress',
+          });
+        else rejectFirst?.(new ApiError('Late first-item conflict', 409));
+      });
+      expect(screen.getByRole('button', { name: control })).toHaveProperty(
+        'disabled',
+        true
+      );
+      expect(screen.getByRole('heading', { name: secondItem.title })).toBeTruthy();
+      expect(screen.queryByText('Late first-item conflict')).toBeNull();
+
+      await act(async () => {
+        resolveSecond?.({
+          ...secondItem,
+          version: 4,
+          status: operation === 'status' ? 'InProgress' : secondItem.status,
+          assigneeName: operation === 'assignment' ? 'Sara' : secondItem.assigneeName,
+        });
+      });
+      expect(
+        screen.getByRole('button', {
+          name: operation === 'status' ? 'Move to Blocked' : 'Unassign',
+        })
+      ).toHaveProperty('disabled', false);
+    }
+  );
+
   it('updates the assignee and refreshes activity', async () => {
     const user = userEvent.setup();
     vi.mocked(workItemsApi.assign)

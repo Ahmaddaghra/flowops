@@ -60,6 +60,7 @@ export const WorkItemDetailPage: React.FC = () => {
   const detailItemId = useRef(id);
   const activityRequestSequence = useRef(0);
   const activityItemId = useRef(id);
+  const mutationRouteSequence = useRef(0);
   const [itemResult, setItemResult] = useState<{
     workItemId: string;
     item: WorkItem;
@@ -91,6 +92,9 @@ export const WorkItemDetailPage: React.FC = () => {
     detailRequestSequence.current++;
     activityItemId.current = id;
     activityRequestSequence.current++;
+    mutationRouteSequence.current++;
+    setIsChangingStatus(false);
+    setIsSavingAssignee(false);
     setStatusError(null);
     setAssignmentError(null);
     setEditingItem(null);
@@ -179,6 +183,9 @@ export const WorkItemDetailPage: React.FC = () => {
     setItemResult({ workItemId: id, item: nextItem });
   };
 
+  const isCurrentMutationRoute = (routeSequence: number) =>
+    mutationRouteSequence.current === routeSequence && detailItemId.current === id;
+
   useEffect(() => {
     void fetchDetail();
     void fetchActivity();
@@ -206,21 +213,23 @@ export const WorkItemDetailPage: React.FC = () => {
 
     setStatusError(null);
     setIsChangingStatus(true);
+    const routeSequence = mutationRouteSequence.current;
     try {
-      updateCurrentItem(
-        await workItemsApi.changeStatus(id, {
-          status: nextStatus,
-          expectedVersion: item.version,
-        })
-      );
-      await fetchActivity();
+      const updated = await workItemsApi.changeStatus(id, {
+        status: nextStatus,
+        expectedVersion: item.version,
+      });
+      if (isCurrentMutationRoute(routeSequence)) {
+        updateCurrentItem(updated);
+        await fetchActivity();
+      }
     } catch (err: unknown) {
-      if (detailItemId.current === id)
+      if (isCurrentMutationRoute(routeSequence))
         setStatusError(
           workItemMutationErrorMessage(err, 'Could not change the work item status.')
         );
     } finally {
-      setIsChangingStatus(false);
+      if (isCurrentMutationRoute(routeSequence)) setIsChangingStatus(false);
     }
   };
 
@@ -229,21 +238,23 @@ export const WorkItemDetailPage: React.FC = () => {
     if (!id || !item) return;
     setAssignmentError(null);
     setIsSavingAssignee(true);
+    const routeSequence = mutationRouteSequence.current;
     try {
-      updateCurrentItem(
-        await workItemsApi.assign(id, {
-          assigneeName: assigneeDraft.trim() || null,
-          expectedVersion: item.version,
-        })
-      );
-      await fetchActivity();
+      const updated = await workItemsApi.assign(id, {
+        assigneeName: assigneeDraft.trim() || null,
+        expectedVersion: item.version,
+      });
+      if (isCurrentMutationRoute(routeSequence)) {
+        updateCurrentItem(updated);
+        await fetchActivity();
+      }
     } catch (err: unknown) {
-      if (detailItemId.current === id)
+      if (isCurrentMutationRoute(routeSequence))
         setAssignmentError(
           workItemMutationErrorMessage(err, 'Could not update the assignment.')
         );
     } finally {
-      setIsSavingAssignee(false);
+      if (isCurrentMutationRoute(routeSequence)) setIsSavingAssignee(false);
     }
   };
 
@@ -251,26 +262,30 @@ export const WorkItemDetailPage: React.FC = () => {
     if (!id || !item) return;
     setAssignmentError(null);
     setIsSavingAssignee(true);
+    const routeSequence = mutationRouteSequence.current;
     try {
       const updated = await workItemsApi.assign(id, {
         assigneeName: null,
         expectedVersion: item.version,
       });
-      updateCurrentItem(updated);
-      if (detailItemId.current === id) setAssigneeDraft('');
-      await fetchActivity();
+      if (isCurrentMutationRoute(routeSequence)) {
+        updateCurrentItem(updated);
+        setAssigneeDraft('');
+        await fetchActivity();
+      }
     } catch (err: unknown) {
-      if (detailItemId.current === id)
+      if (isCurrentMutationRoute(routeSequence))
         setAssignmentError(
           workItemMutationErrorMessage(err, 'Could not unassign this work item.')
         );
     } finally {
-      setIsSavingAssignee(false);
+      if (isCurrentMutationRoute(routeSequence)) setIsSavingAssignee(false);
     }
   };
 
   const handleEdit = async (request: CreateWorkItemRequest) => {
     if (!id || !editingItem || editingItem.id !== id) return;
+    const routeSequence = mutationRouteSequence.current;
     const updated = await workItemsApi.update(id, {
       title: request.title,
       description: request.description,
@@ -278,9 +293,11 @@ export const WorkItemDetailPage: React.FC = () => {
       categoryId: request.categoryId,
       expectedVersion: editingItem.version,
     });
-    updateCurrentItem(updated);
-    if (detailItemId.current === id) setEditingItem(null);
-    await fetchActivity();
+    if (isCurrentMutationRoute(routeSequence)) {
+      updateCurrentItem(updated);
+      setEditingItem(null);
+      await fetchActivity();
+    }
   };
 
   if (isCurrentDetailLoading) {
