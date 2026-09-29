@@ -23,6 +23,7 @@ vi.mock('@/lib/api/workItems', () => ({
 
 const item: WorkItem = {
   id: 'item-1',
+  version: 1,
   title: 'Investigate customer login',
   description: 'Intermittent login failure',
   status: 'Todo',

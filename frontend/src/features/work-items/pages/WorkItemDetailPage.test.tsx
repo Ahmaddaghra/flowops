@@ -23,6 +23,7 @@ vi.mock('@/lib/api/workItems', () => ({
 
 const item: WorkItem = {
   id: 'item-42',
+  version: 3,
   title: 'Investigate login',
   description: 'Intermittent failure',
   status: 'Todo',
@@ -174,6 +175,7 @@ describe('WorkItemDetailPage', () => {
     const user = userEvent.setup();
     const updated: WorkItem = {
       ...item,
+      version: 4,
       title: 'Updated login investigation',
       priority: 'High',
       categoryId: 'category-2',
@@ -197,8 +199,87 @@ describe('WorkItemDetailPage', () => {
       description: item.description,
       priority: 'High',
       categoryId: 'category-2',
+      expectedVersion: 3,
     });
     expect(screen.getAllByText('To Do')).toHaveLength(2);
+
+    vi.mocked(workItemsApi.assign).mockResolvedValue({
+      ...updated,
+      version: 5,
+      assigneeName: 'Sara',
+    });
+    await user.clear(screen.getByLabelText('Assignee name'));
+    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
+      assigneeName: 'Sara',
+      expectedVersion: 4,
+    });
+  });
+
+  it('keeps a stale edit form and shows the conflict without retrying', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.update).mockRejectedValue(
+      new ApiError(
+        'This work item was modified by another request. Refresh it and try again.',
+        409,
+        {
+          title: 'Work Item Concurrency Conflict',
+          detail:
+            'This work item was modified by another request. Refresh it and try again.',
+        }
+      )
+    );
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'My unsaved edit');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'This work item was modified by another request. Refresh it and try again.'
+    );
+    expect(screen.getByLabelText('Title')).toHaveProperty('value', 'My unsaved edit');
+    expect(workItemsApi.update).toHaveBeenCalledTimes(1);
+    expect(workItemsApi.update).toHaveBeenCalledWith(
+      item.id,
+      expect.objectContaining({ title: 'My unsaved edit', expectedVersion: 3 })
+    );
+    expect(workItemsApi.getById).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('heading', { name: item.title })).toBeTruthy();
+  });
+
+  it('uses the status response version for the next assignment', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.changeStatus).mockResolvedValue({
+      ...item,
+      status: 'InProgress',
+      version: 4,
+    });
+    vi.mocked(workItemsApi.assign).mockResolvedValue({
+      ...item,
+      status: 'InProgress',
+      version: 5,
+      assigneeName: 'Sara',
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    await screen.findByRole('button', { name: 'Move to Blocked' });
+    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
+      status: 'InProgress',
+      expectedVersion: 3,
+    });
+    await user.clear(screen.getByLabelText('Assignee name'));
+    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
+      assigneeName: 'Sara',
+      expectedVersion: 4,
+    });
+    expect(await screen.findByText('Currently assigned to Sara')).toBeTruthy();
   });
 
   it('shows a clear conflict when the server rejects a status transition', async () => {
@@ -245,6 +326,7 @@ describe('WorkItemDetailPage', () => {
         'This work item was modified by another request. Refresh it and try again.'
       )
     ).toBeTruthy();
+    expect(workItemsApi.changeStatus).toHaveBeenCalledTimes(1);
   });
 
   it('explains stale assignment conflicts and prompts refresh', async () => {
@@ -333,8 +415,14 @@ describe('WorkItemDetailPage', () => {
     await user.clear(screen.getByLabelText('Assignee name'));
     await user.type(screen.getByLabelText('Assignee name'), 'Sara');
     await user.click(screen.getByRole('button', { name: 'Save assignment' }));
-    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, 'InProgress');
-    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, 'Sara');
+    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
+      status: 'InProgress',
+      expectedVersion: 3,
+    });
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
+      assigneeName: 'Sara',
+      expectedVersion: 3,
+    });
     await user.click(screen.getByRole('link', { name: 'Open second work item' }));
     expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
 
@@ -353,7 +441,9 @@ describe('WorkItemDetailPage', () => {
 
   it('updates the assignee and refreshes activity', async () => {
     const user = userEvent.setup();
-    vi.mocked(workItemsApi.assign).mockResolvedValue({ ...item, assigneeName: 'Sara' });
+    vi.mocked(workItemsApi.assign)
+      .mockResolvedValueOnce({ ...item, version: 4, assigneeName: 'Sara' })
+      .mockResolvedValueOnce({ ...item, version: 5, assigneeName: null });
     renderDetail();
     await screen.findByText(item.title);
 
@@ -362,8 +452,16 @@ describe('WorkItemDetailPage', () => {
     await user.type(assigneeInput, 'Sara');
     await user.click(screen.getByRole('button', { name: 'Save assignment' }));
 
-    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, 'Sara');
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
+      assigneeName: 'Sara',
+      expectedVersion: 3,
+    });
     expect(await screen.findByText('Currently assigned to Sara')).toBeTruthy();
     expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: 'Unassign' }));
+    expect(workItemsApi.assign).toHaveBeenLastCalledWith(item.id, {
+      assigneeName: null,
+      expectedVersion: 4,
+    });
   });
 });
