@@ -17,12 +17,13 @@ public class WorkItemsController : ControllerBase
         _workItemService = workItemService ?? throw new ArgumentNullException(nameof(workItemService));
     }
 
-    /// <summary>Lists all work items. Server-side query capabilities are available as the lifecycle query stage is completed.</summary>
+    /// <summary>Lists work items using server-side search, filters, sorting, and pagination.</summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<WorkItemResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<WorkItemResponse>>> GetAll(CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(PagedResult<WorkItemResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PagedResult<WorkItemResponse>>> GetAll([FromQuery] WorkItemQuery query, CancellationToken cancellationToken)
     {
-        return Ok(await _workItemService.GetAllAsync(cancellationToken));
+        return Ok(await _workItemService.ListAsync(query, cancellationToken));
     }
 
     /// <summary>Retrieves a work item by its unique ID.</summary>

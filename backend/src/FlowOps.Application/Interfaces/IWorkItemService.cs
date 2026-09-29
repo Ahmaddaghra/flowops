@@ -7,7 +7,7 @@ namespace FlowOps.Application.Interfaces;
 
 public interface IWorkItemService
 {
-    Task<IReadOnlyList<WorkItemResponse>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<PagedResult<WorkItemResponse>> ListAsync(WorkItemQuery query, CancellationToken cancellationToken = default);
     Task<WorkItemResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<WorkItemResponse> CreateAsync(CreateWorkItemRequest request, CancellationToken cancellationToken = default);
     Task<WorkItemResponse?> UpdateAsync(Guid id, UpdateWorkItemRequest request, CancellationToken cancellationToken = default);

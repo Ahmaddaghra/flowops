@@ -17,10 +17,20 @@ public class WorkItemService : IWorkItemService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<IReadOnlyList<WorkItemResponse>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<PagedResult<WorkItemResponse>> ListAsync(WorkItemQuery query, CancellationToken cancellationToken = default)
     {
-        var items = await _store.ListAsync(cancellationToken);
-        return items.Select(item => WorkItemResponse.FromEntity(item)).ToList();
+        ArgumentNullException.ThrowIfNull(query);
+        ValidateQuery(query);
+
+        var page = await _store.QueryAsync(query, cancellationToken);
+        return new PagedResult<WorkItemResponse>
+        {
+            Items = page.Items.Select(item => WorkItemResponse.FromEntity(item)).ToList(),
+            Page = page.Page,
+            PageSize = page.PageSize,
+            TotalItems = page.TotalItems,
+            TotalPages = page.TotalPages
+        };
     }
 
     public async Task<WorkItemResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -187,6 +197,28 @@ public class WorkItemService : IWorkItemService
         var name = Enum.GetNames<WorkItemStatus>().FirstOrDefault(x => string.Equals(x, value, StringComparison.OrdinalIgnoreCase));
         if (name is null) throw new ArgumentException($"Invalid status. Valid values are: {string.Join(", ", Enum.GetNames<WorkItemStatus>())}.", field);
         return Enum.Parse<WorkItemStatus>(name);
+    }
+
+    private static void ValidateQuery(WorkItemQuery query)
+    {
+        if (query.Page < 1) throw new ArgumentException("Page must be at least 1.", nameof(query.Page));
+        if (query.PageSize is < 1 or > 100) throw new ArgumentException("PageSize must be between 1 and 100.", nameof(query.PageSize));
+        if (query.Status is not null && !Enum.IsDefined(query.Status.Value))
+            throw new ArgumentException("Status is invalid.", nameof(query.Status));
+        if (query.Priority is not null && !Enum.IsDefined(query.Priority.Value))
+            throw new ArgumentException("Priority is invalid.", nameof(query.Priority));
+        if (!new[] { "createdat", "updatedat", "title", "priority", "status" }.Contains(query.Sort, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException("Sort must be createdAt, updatedAt, title, priority, or status.", nameof(query.Sort));
+        if (!string.Equals(query.Direction, "asc", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(query.Direction, "desc", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Direction must be asc or desc.", nameof(query.Direction));
+        if (query.Page - 1 > int.MaxValue / query.PageSize)
+            throw new ArgumentException("Page is too large for the selected page size.", nameof(query.Page));
+
+        query.Search = query.Search?.Trim();
+        query.Assignee = query.Assignee?.Trim();
+        query.Sort = query.Sort.ToLowerInvariant();
+        query.Direction = query.Direction.ToLowerInvariant();
     }
 
 }

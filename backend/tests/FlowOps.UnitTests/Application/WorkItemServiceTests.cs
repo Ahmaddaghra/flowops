@@ -93,24 +93,33 @@ public class WorkItemServiceTests
     }
 
     [Fact]
-    public async Task GetAllAsync_ReturnsAllWorkItemsOrderedByCreatedAtDescending()
+    public async Task ListAsync_ReturnsPageItemsAndMetadata()
     {
         // Arrange
         var item1 = new WorkItem("First Item", createdAtUtc: DateTime.UtcNow.AddHours(-2));
         var item2 = new WorkItem("Second Item", createdAtUtc: DateTime.UtcNow);
 
         _mockStore
-            .Setup(x => x.ListAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<WorkItem> { item2, item1 });
+            .Setup(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PagedResult<WorkItem>
+            {
+                Items = new List<WorkItem> { item2, item1 },
+                Page = 1,
+                PageSize = 20,
+                TotalItems = 2,
+                TotalPages = 1
+            });
 
         // Act
-        var results = await _service.GetAllAsync();
+        var results = await _service.ListAsync(new WorkItemQuery());
 
         // Assert
-        Assert.Equal(2, results.Count);
-        Assert.Equal("Second Item", results[0].Title);
-        Assert.Equal("First Item", results[1].Title);
-        _mockStore.Verify(x => x.ListAsync(It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(2, results.Items.Count);
+        Assert.Equal("Second Item", results.Items[0].Title);
+        Assert.Equal("First Item", results.Items[1].Title);
+        Assert.Equal(2, results.TotalItems);
+        Assert.Equal(1, results.TotalPages);
+        _mockStore.Verify(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -237,5 +246,21 @@ public class WorkItemServiceTests
         Assert.Null(item.AssigneeName);
         Assert.Equal(new[] { "Assigned to Ahmad", "Work item unassigned" }, events.Select(x => x.Description));
         _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(1, 101)]
+    public async Task ListAsync_RejectsInvalidPagination(int page, int pageSize)
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ListAsync(new WorkItemQuery { Page = page, PageSize = pageSize }));
+        _mockStore.Verify(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListAsync_RejectsUnsupportedSort()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => _service.ListAsync(new WorkItemQuery { Sort = "randomField" }));
+        _mockStore.Verify(x => x.QueryAsync(It.IsAny<WorkItemQuery>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
