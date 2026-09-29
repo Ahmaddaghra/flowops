@@ -47,7 +47,8 @@
                   "    pm.response.to.have.status(201);",
                   "    pm.expect(pm.response.headers.get('Location')).to.be.ok;",
                   "});",
-                  "if (pm.response.code === 201) { pm.environment.set('workItemId', pm.response.json().id); }"
+                  "pm.test('New work item starts at version 1', function () { pm.expect(pm.response.json().version).to.eql(1); });",
+                  "if (pm.response.code === 201) { const item = pm.response.json(); pm.environment.set('workItemId', item.id); pm.environment.set('workItemVersion', item.version); }"
                 ]
               }
             }
@@ -68,7 +69,18 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/work-items/{{workItemId}}"
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const item = pm.response.json(); pm.environment.set('workItemId', item.id); pm.environment.set('workItemVersion', item.version); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Update descriptive fields",
@@ -77,11 +89,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Investigate login failures\",\n  \"description\": \"Reproduction steps are being collected\",\n  \"priority\": \"Critical\",\n  \"categoryId\": \"{{categoryId}}\"\n}",
+              "raw": "{\n  \"title\": \"Investigate login failures\",\n  \"description\": \"Reproduction steps are being collected\",\n  \"priority\": \"Critical\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/work-items/{{workItemId}}"
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Change status to InProgress",
@@ -90,11 +114,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"InProgress\"\n}",
+              "raw": "{\n  \"status\": \"InProgress\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/work-items/{{workItemId}}/status"
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Assign work item",
@@ -103,11 +139,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"assigneeName\": \"Ahmad\"\n}",
+              "raw": "{\n  \"assigneeName\": \"Ahmad\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Unassign work item",
@@ -116,11 +164,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"assigneeName\": null\n}",
+              "raw": "{\n  \"assigneeName\": null,\n  \"expectedVersion\": {{workItemVersion}}\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Get work item activity",

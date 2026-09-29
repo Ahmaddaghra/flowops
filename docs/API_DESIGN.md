@@ -54,16 +54,30 @@ Create a work item:
 }
 ```
 
+Update descriptive fields using the version from the representation being edited:
+
+```json
+{
+  "title": "Investigate intermittent login failures",
+  "description": "New details",
+  "priority": "High",
+  "categoryId": "10000000-0000-0000-0000-000000000002",
+  "expectedVersion": 1
+}
+```
+
+Every work item response (list, detail, create, edit, status, and assignment) includes a positive `version`. Create returns `version: 1` and requires no `expectedVersion`. PATCH, status, and assignment requests require `expectedVersion >= 1`; missing, zero, negative, or invalid values return `400` Validation Problem Details. Versions may advance more than once when an edit changes several fields, so clients must use the returned version rather than incrementing a local counter.
+
 Change status:
 
 ```json
-{ "status": "InProgress" }
+{ "status": "InProgress", "expectedVersion": 1 }
 ```
 
 Unassign by sending a null or empty `assigneeName`:
 
 ```json
-{ "assigneeName": null }
+{ "assigneeName": null, "expectedVersion": 1 }
 ```
 
 ### Lifecycle rules
@@ -81,11 +95,13 @@ The server enforces transitions and returns `409 Conflict` for a transition that
 
 Errors use RFC 7807 Problem Details with `application/problem+json`. Data annotation and query validation failures return `400` with field errors. Missing work items or categories return `404`. Invalid lifecycle transitions return `409` with title `Invalid Work Item Transition`.
 
-WorkItem mutations use an optimistic concurrency token enforced by EF Core on the server. If a request loaded an older version and another mutation saved first, the stale write returns `409` with title `Work Item Concurrency Conflict` and detail `This work item was modified by another request. Refresh it and try again.` The response does not expose EF or SQL details. The UI differentiates this stale-write conflict from an invalid status transition.
+Optimistic concurrency has two checks. The application compares `expectedVersion` with the current tracked WorkItem's `Version` before any domain mutation, activity staging, or save. This rejects an old browser page even when another write finished before its request began. EF Core also retains the originally loaded `Version` in the UPDATE predicate, protecting the race between server load and save.
+
+Both conflicts return `409` with title `Work Item Concurrency Conflict` and detail `This work item was modified by another request. Refresh it and try again.` Conflict responses contain no version values, EF/SQL details, or stack traces. The UI distinguishes this from an invalid status transition, retains a failed edit's form values, and does not retry automatically. Clients should refresh and review the latest representation before retrying with its version; they must not blindly fetch a newer token and replay stale values.
 
 ### Activity history
 
-Create, title, description, priority, category, status, and assignment changes produce activity events in the same `SaveChanges` as the associated work item change. EF Core's transaction rolls back both the mutation and staged activity when the version check fails; a stale request cannot leave a ghost event. No-op descriptive updates do not add events. Events currently have a nullable `actorUserId`; until Phase 4 authentication exists, the UI labels an absent actor as `System`.
+Create, title, description, priority, category, status, and assignment changes produce activity events in the same `SaveChanges` as the associated work item change. An `expectedVersion` mismatch stages no mutation or event and does not call `SaveChanges`. EF Core's transaction rolls back both the mutation and staged activity when a race fails the database version check; a stale request cannot leave a ghost event. No-op descriptive updates do not add events. Events currently have a nullable `actorUserId`; until Phase 4 authentication exists, the UI labels an absent actor as `System`.
 
 ## Scope deferred to later phases
 

@@ -14,15 +14,15 @@ Phase 3 adds one end-to-end work item lifecycle from PostgreSQL through the API 
 
 The versioned API contract and request examples are in [API Design](../API_DESIGN.md). The Phase 3 migrations add `Categories` and `ActivityEvents`, a nullable category reference, query indexes, and a `Version` concurrency token. They seed four stable categories, initialize existing work items to version `1`, and preserve legacy records. See [Data Model](../DATA_MODEL.md) for constraints and relationships.
 
-Every meaningful WorkItem mutation increments `Version`; no-op descriptive updates leave it unchanged. EF Core includes the original token in the update predicate, so concurrent edits, category/priority changes, status transitions, and assignments cannot silently overwrite each other. The persistence layer translates stale writes to an application conflict; the API returns `409 application/problem+json` with title `Work Item Concurrency Conflict` and a refresh/retry detail.
+Every WorkItem response exposes `version`, initialized to `1` on create. Existing-item mutations require a positive `expectedVersion` from the representation the client edited. The application checks it against the current item before any mutation or activity staging, rejecting old pages even after another write has completed. Every meaningful domain mutation increments `Version`; no-op descriptive updates leave it unchanged. EF Core retains the original token in the update predicate to detect races occurring after server load. The persistence layer translates stale writes to an application conflict; the API returns `409 application/problem+json` with title `Work Item Concurrency Conflict` and a refresh/retry detail.
 
-An item's update and its activity event are saved together in one `SaveChanges`. A concurrency failure rolls the database transaction back, including any staged activity event. No-op descriptive updates do not add events. The domain rejects every status transition outside the documented matrix, including same-state requests; the API returns `409 Conflict` for those invalid transitions as well. Assignment stores a display name until Phase 4 establishes user identity. `ActorUserId` remains nullable and the UI displays `System` when it is absent.
+An item's update and its activity event are saved together in one `SaveChanges`. A client version mismatch does not mutate, stage activity, or save. An EF concurrency failure rolls the database transaction back, including any staged activity event. Both conflicts return the same safe HTTP 409 response. The frontend uses versions returned by the backend, preserves a rejected edit form, and prompts refresh/retry without automatically replaying stale writes. No-op descriptive updates do not add events. The domain rejects every status transition outside the documented matrix, including same-state requests; the API returns `409 Conflict` for those invalid transitions as well. Assignment stores a display name until Phase 4 establishes user identity. `ActorUserId` remains nullable and the UI displays `System` when it is absent.
 
 ## Automated verification
 
-- Domain and application unit tests cover entity invariants, allowed/denied and same-state transitions, version increments, service behavior, and event creation.
-- PostgreSQL integration tests deterministically load the same version into independent contexts, verify the winning lifecycle change and stale-write conflict, confirm activity rollback, test conflict Problem Details, and cover all same-state HTTP conflicts and migration compatibility.
-- React Testing Library and Vitest tests cover create-form validation and submission, server field errors, list loading/error/empty/populated states, search debounce and URL state, pagination, detail and activity rendering with stale-response protection across route changes, edits, invalid-transition messaging, and stale status/edit/assignment conflict messaging.
+- Domain and application unit tests cover entity invariants, allowed/denied and same-state transitions, version increments, service behavior, event creation, and expected-version checks before mutation/activity/save.
+- PostgreSQL integration tests deterministically load the same version into independent contexts, verify the winning lifecycle change and stale-write conflict, confirm activity rollback, test stale client representations on all three mutation endpoints, validate missing/zero/negative/invalid versions, test conflict Problem Details, and cover all same-state HTTP conflicts and migration compatibility.
+- React Testing Library and Vitest tests cover create-form validation and submission, server field errors, list loading/error/empty/populated states, search debounce and URL state, pagination, detail and activity rendering with stale-response protection across route changes, edits, invalid-transition messaging, and stale status/edit/assignment conflict messaging, and propagation of the returned version into subsequent mutations.
 - Frontend CI runs formatting, lint, tests, and the production build. Backend CI runs format, build, unit tests, and PostgreSQL integration tests.
 
 Run frontend verification from `frontend/`:
@@ -39,7 +39,7 @@ Run backend verification from the repository root using the commands in [backend
 
 ## API tooling
 
-Import `docs/postman/FlowOps.postman_collection.json` into Postman. The companion `FlowOps.local.postman_environment.json` supplies the local API base URL. The collection includes lifecycle requests and captures a created work item ID for follow-up requests.
+Import `docs/postman/FlowOps.postman_collection.json` into Postman. The companion `FlowOps.local.postman_environment.json` supplies the local API base URL. The collection includes lifecycle requests and captures `workItemId` and `workItemVersion` after create/detail reads. Mutations send `{{workItemVersion}}` as `expectedVersion` and update the variable from each successful response, allowing sequential lifecycle requests. Create requires no expected version.
 
 ## Manual browser acceptance
 
@@ -49,6 +49,8 @@ The local React app was exercised against the migrated PostgreSQL database at de
 - Exercised every allowed status edge through the UI: To Do → In Progress/Blocked, In Progress → Blocked/Done, and Blocked → In Progress/To Do. Confirmed Done exposes no next status. An attempted Done → To Do API request returned `409 application/problem+json`.
 - Applied search, status, priority, category, assignee, sort direction, and page-size controls; checked the URL state, next-page navigation, and state after reload.
 - Checked responsive mobile cards and stacked filters, keyboard access to the create dialog and pagination, and found no browser console warnings or errors.
+
+The complete client-version contract was also verified in two independent browser tabs against a disposable PostgreSQL database. Create returned Version 1; a descriptive edit, status change, and assignment advanced it to Version 4. Tab B then saved Version 5 while tab A retained its Version 4 edit form. Tab A received the concurrency conflict and retained its typed values; the winning state and five successful activity events remained unchanged. After refreshing tab A, its retry succeeded at Version 6 with exactly six successful activity events. Captured browser warning/error logs were empty in both tabs.
 
 ## Scope boundary
 

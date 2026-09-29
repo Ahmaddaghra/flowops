@@ -35,7 +35,7 @@ The migration seeds Operations, Support, Engineering, and Billing using stable I
 - `Description` — required human-readable event text, maximum 1,000 characters
 - `CreatedAtUtc` — UTC timestamp
 
-An index on `(WorkItemId, CreatedAtUtc)` supports the newest-first activity endpoint. Lifecycle writes save the changed item and its events together in one database transaction. If the version check fails, the transaction rolls back both the WorkItem mutation and staged activity. Phase 4 can connect actor IDs to an authenticated user table.
+An index on `(WorkItemId, CreatedAtUtc)` supports the newest-first activity endpoint. Lifecycle writes save the changed item and its events together in one database transaction. A client version mismatch changes nothing, stages no event, and skips saving. If the EF version check fails during saving, the transaction rolls back both the WorkItem mutation and staged activity. Phase 4 can connect actor IDs to an authenticated user table.
 
 ## Relationships and persistence notes
 
@@ -48,7 +48,7 @@ WorkItem 1 ─── 0..* ActivityEvent
 - A work item may be unassigned; assignment currently stores a display name instead of a user foreign key.
 - The lifecycle migration adds a nullable category reference and new tables/indexes. Integration coverage migrates a database containing a legacy work item and verifies it remains readable.
 - `AddWorkItemConcurrency` adds `WorkItems.Version` as a non-null column with default `1`, so existing rows remain valid and new domain entities start at version `1`.
-- Optimistic concurrency is enforced server-side for descriptive/category/priority edits, status changes, and assignment/unassignment. The token is intentionally not exposed in the Phase 3 response contract.
+- Work item responses expose `version`; clients must send the representation's positive `expectedVersion` for descriptive/category/priority edits, status changes, and assignment/unassignment. The application checks it against the requested item before mutation or activity staging, then EF Core protects races after loading. Both stale representations and database races return HTTP 409. Clients refresh and review the latest state before retrying, so an old page submitted after another write completes cannot silently overwrite that write.
 - The `AddWorkItemConcurrency` migration's `Down` path drops only `WorkItems.Version`. The earlier `AddWorkItemLifecycle` migration's `Down` path removes the category reference and activity data; use that rollback only when Phase 3 history can be discarded.
 
 ## Deferred entities
