@@ -11,10 +11,3 @@ export interface WorkItem {
   createdAtUtc: string;
   updatedAtUtc: string;
 }
-
-export interface CreateWorkItemRequest {
-  title: string;
-  description?: string | null;
-  priority: WorkItemPriority;
-  assigneeName?: string | null;
-}
