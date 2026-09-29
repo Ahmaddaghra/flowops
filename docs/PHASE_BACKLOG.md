@@ -48,14 +48,20 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 
 **Phase exit:** full create -> triage -> assign -> progress -> resolve workflow works through the UI and API.
 
-## Phase 4 — Authentication, Collaboration & QA
+## Phase 4 — Authentication, Collaboration & QA (In Progress)
 
-1. `feat(auth): add JWT authentication`
-2. `feat(auth): enforce role and ownership rules`
-3. `feat(comments): add work item comments`
-4. `test(api): add authorization and negative-path regression cases`
-5. [x] `test(postman): publish API collection and environment template` (delivered in Phase 3)
-6. `docs(qa): add manual test suite and representative bug reports`
+The current review boundary is Stage 4A/4B. Implementation must stop here for checkpoint review before frontend authentication or collaboration work begins. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
+
+1. [x] `feat(auth): add Identity schema, Member/Admin roles, JWT register/login/me, and user directory` (Stage 4A)
+2. [x] `feat(authz): add user-backed ownership/assignment and enforce role/ownership rules without weakening concurrency` (Stage 4B)
+3. [x] `test(api): verify authentication/authorization boundaries and additive migration compatibility` (Stage 4A/4B)
+4. [ ] `feat(web): add auth state, login/register, protected routes, token-aware client, and logout` (Stage 4C)
+5. [ ] `feat(web): add permission-aware user assignment controls and regression tests` (Stage 4D)
+6. [ ] `feat(comments): add persisted comments, authenticated actors, activity, UI, and tests` (Stage 4E)
+7. [ ] `test(api): expand remaining negative-path workflows and authenticated Postman requests` (Stage 4F)
+8. [x] `test(postman): publish baseline API collection and environment template` (delivered in Phase 3; Phase 4 auth expansion pending)
+9. [ ] `docs(qa): add manual test suite, real development bug reports, and requirement traceability` (Stage 4F)
+10. [ ] `docs: finish Phase 4 documentation, browser QA, CI verification, and PR delivery` (Stage 4G)
 
 **Phase exit:** protected workflows are verified both manually and through integration tests.
 

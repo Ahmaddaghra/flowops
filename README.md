@@ -8,13 +8,17 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
-- **Phase 3 — Work Item Lifecycle (Implemented; PR #4 open)**
+- **Phase 3 — Work Item Lifecycle (Completed & Verified)**
+- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4A/4B backend checkpoint)**
+
+Phase 4 currently adds Identity/JWT authentication and server-side work item authorization. Implementation pauses after the Stage 4A/4B checkpoint for review. The React client and Postman collection still describe the Phase 3 workflow; frontend authentication, user assignment controls, comments, and expanded QA artifacts remain pending. Use authenticated Swagger/API requests to review this checkpoint.
 
 ### Tech Stack Summary
 
 #### Backend
 - **Framework:** ASP.NET Core 10 Web API (.NET 10.0.401 SDK / 10.0.12 runtime)
 - **Persistence:** Entity Framework Core 10.0.12 + PostgreSQL 17 (via `Npgsql.EntityFrameworkCore.PostgreSQL` 10.0.3)
+- **Identity:** ASP.NET Core Identity with GUID users and Admin/Member roles; JWT bearer access tokens
 - **API Tooling:** OpenAPI / Swagger UI (Swashbuckle 7.3.1, enabled in Development)
 - **Testing:** xUnit 2.9.3, Moq 4.20.72, and PostgreSQL-backed API integration tests
 - **CI / Automation:** GitHub Actions (`.github/workflows/backend-ci.yml`)
@@ -43,9 +47,9 @@ FlowOps strictly follows an inward-pointing dependency architecture:
 ```text
 FlowOps.Domain (Zero external dependencies)
       ↑
-FlowOps.Application (Depends on Domain only; defines IWorkItemStore abstraction; NO EF Core)
+FlowOps.Application (Domain, use cases, identity/current-user abstractions; NO EF Core or Identity)
       ↑
-FlowOps.Infrastructure (Implements IWorkItemStore via EF Core 10 & PostgreSQL 17)
+FlowOps.Infrastructure (EF Core/PostgreSQL, ASP.NET Identity, JWT issuance)
       ↑
 FlowOps.Api (Web API controllers, RFC 7807 ProblemDetails middleware, Swagger in Development)
 
@@ -91,13 +95,17 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 ## Configuration & Secret Hygiene Model
 
 - **`appsettings.json` (Production Baseline):**
-  Contains production-safe baseline defaults only. Contains **no** database passwords, credentials, or local connection strings (`ConnectionStrings:DefaultConnection` is empty).
+  Contains production-safe baseline defaults and non-secret JWT issuer, audience, and lifetime only. Contains **no** JWT signing key, database passwords, credentials, or local connection strings (`ConnectionStrings:DefaultConnection` is empty).
 - **`appsettings.Development.json` (Local Development):**
   Contains disposable container-only defaults for zero-friction local development. These are strictly local non-production values.
 - **Frontend `.env.example`:**
   Sets `VITE_API_BASE_URL=/api/v1`. The variable is optional because the frontend defaults to `/api/v1`; Vite proxies `/api` requests to `http://localhost:5055` during local development.
 - **`.env`:**
   Ignored by git and untracked.
+- **JWT signing key:**
+  Supply `Jwt:SigningKey` through user-secrets or `Jwt__SigningKey` through the environment. At least 32 UTF-8 bytes are required; startup fails clearly when signing configuration is invalid. Never place a real key in appsettings, an example environment file, or Postman.
+- **Optional Development admin:**
+  `FLOWOPS_SEED_ADMIN_EMAIL`, `FLOWOPS_SEED_ADMIN_PASSWORD`, and `FLOWOPS_SEED_ADMIN_DISPLAY_NAME` come from secret configuration/environment. The bootstrap is Development-only and creates no user when required values are missing. Registration always creates a Member.
 
 ---
 
@@ -125,8 +133,17 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Dashboard placeholder, settings/system status page, and not-found page
 - [x] Frontend CI workflow (ESLint, Prettier, Vitest, TypeScript compilation, Vite build)
 
-### Planned (Future Phases)
-- [ ] JWT authentication, user identity & work item comments (Phase 4)
+### Phase 4 Backend Checkpoint
+- [x] ASP.NET Core Identity in the existing PostgreSQL database, JWT register/login/me, and authenticated user directory
+- [x] Admin/Member roles and server-side creator/assignee authorization
+- [x] User-backed ownership and assignment, preserved legacy assignment snapshots, and authenticated activity actors
+- [x] Existing optimistic concurrency contract retained for authorized mutations
+
+See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, verification evidence, and checkpoint limitations.
+
+### Planned (Remaining Phase 4 and Future Phases)
+- [ ] React authentication, protected routes, session storage, and user-backed assignment controls (Phase 4)
+- [ ] Work item comments, expanded Postman workflows, manual QA, bug reports, and traceability (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
 ---
@@ -150,9 +167,21 @@ docker compose up -d
 
 ### 3. Backend Setup & Run
 
-Apply database migrations and launch the backend API:
+Configure a private JWT signing key before launching the backend API. The following command generates a new local key and stores it in the API project's user-secrets:
 
 ```bash
+dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -base64 48)" \
+  --project backend/src/FlowOps.Api/FlowOps.Api.csproj
+```
+
+Alternatively, supply a strong `Jwt__SigningKey` through the process environment (`FLOWOPS_JWT_SIGNING_KEY` is also supported). Safe defaults are issuer `FlowOps.Api`, audience `FlowOps.Web`, and a 60-minute access token. See [backend setup](backend/README.md) for the optional Development admin bootstrap.
+
+EF migration tooling requires an explicit `ConnectionStrings__DefaultConnection` and does not require a JWT key. Export the disposable Docker connection string below, changing it if you customized `.env`; Docker Compose does not export its values into your shell. Then apply migrations and launch the backend API:
+
+```bash
+# Disposable local Docker database from the existing environment template
+export ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=flowops;Username=flowops;Password=flowops_dev_pass_123'
+
 # Apply migrations
 dotnet ef database update \
   --project backend/src/FlowOps.Infrastructure/FlowOps.Infrastructure.csproj \
@@ -170,6 +199,8 @@ The API will be available at:
 - **Health Check:** `http://localhost:5055/api/v1/health`
 - **Swagger UI:** `http://localhost:5055/swagger`
 
+Register or log in using `/api/v1/auth/register` or `/api/v1/auth/login`, then use Swagger's Authorize action with the returned bearer access token. Work item and category endpoints require authentication.
+
 ### 4. Frontend Setup & Run
 
 In a separate terminal:
@@ -183,6 +214,8 @@ npm run dev
 The web application will be running at `http://localhost:5173`.
 All requests to `/api/v1` are automatically proxied to the backend on `http://localhost:5055`.
 The frontend uses `/api/v1` by default. To set it explicitly, copy `.env.example` to `.env` inside `frontend/`; keep `/api/v1` as the value for local development so requests continue through the Vite proxy.
+
+At the Stage 4A/4B checkpoint the frontend remains the Phase 3 client and does not send a bearer token. Its work item requests now receive `401`; React authentication and assignment changes begin only after checkpoint review. The existing Postman collection likewise needs the later Phase 4 auth workflow update.
 
 ### 5. Frontend Scripts
 
@@ -249,7 +282,8 @@ flowops/
 │   └── phases/
 │       ├── phase-1-backend-foundation.md # Phase 1 documentation
 │       ├── phase-2-frontend-foundation.md # Phase 2 documentation
-│       └── phase-3-work-item-lifecycle.md # Phase 3 implementation and verification
+│       ├── phase-3-work-item-lifecycle.md # Phase 3 implementation and verification
+│       └── phase-4-auth-collaboration-qa.md # Stage 4A/4B backend checkpoint
 ├── docker-compose.yml               # Hardened local PostgreSQL container configuration
 ├── .env.example                     # Local development environment template
 ├── CONTRIBUTING.md
