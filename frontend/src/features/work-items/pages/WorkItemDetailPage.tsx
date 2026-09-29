@@ -56,9 +56,14 @@ const activityLabels: Record<WorkItemActivity['eventType'], string> = {
 
 export const WorkItemDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const detailRequestSequence = useRef(0);
+  const detailItemId = useRef(id);
   const activityRequestSequence = useRef(0);
   const activityItemId = useRef(id);
-  const [item, setItem] = useState<WorkItem | null>(null);
+  const [itemResult, setItemResult] = useState<{
+    workItemId: string;
+    item: WorkItem;
+  } | null>(null);
   const [activityResult, setActivityResult] = useState<{
     workItemId: string;
     events: WorkItemActivity[];
@@ -68,7 +73,11 @@ export const WorkItemDetailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isActivityLoading, setIsActivityLoading] = useState(true);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<{
+    workItemId: string | undefined;
+    requestId: number;
+    message: string;
+  } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [isSavingAssignee, setIsSavingAssignee] = useState(false);
@@ -78,29 +87,43 @@ export const WorkItemDetailPage: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   useLayoutEffect(() => {
+    detailItemId.current = id;
+    detailRequestSequence.current++;
     activityItemId.current = id;
     activityRequestSequence.current++;
   }, [id]);
 
   const fetchDetail = useCallback(async () => {
+    const requestId = ++detailRequestSequence.current;
     if (!id) {
-      setError('A work item ID is required.');
+      setDetailError({
+        workItemId: id,
+        requestId,
+        message: 'A work item ID is required.',
+      });
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
-    setError(null);
+    setDetailError(null);
     try {
       const data = await workItemsApi.getById(id);
-      setItem(data);
-      setAssigneeDraft(data.assigneeName ?? '');
+      if (requestId === detailRequestSequence.current && detailItemId.current === id) {
+        setItemResult({ workItemId: id, item: data });
+        setAssigneeDraft(data.assigneeName ?? '');
+      }
     } catch (err: unknown) {
-      if (err instanceof ApiError && err.status === 404)
-        setError(`Work item '${id}' was not found.`);
-      else if (err instanceof Error) setError(err.message);
-      else setError('An unexpected error occurred while loading this work item.');
+      if (requestId === detailRequestSequence.current && detailItemId.current === id) {
+        let message: string;
+        if (err instanceof ApiError && err.status === 404)
+          message = `Work item '${id}' was not found.`;
+        else if (err instanceof Error) message = err.message;
+        else message = 'An unexpected error occurred while loading this work item.';
+        setDetailError({ workItemId: id, requestId, message });
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === detailRequestSequence.current && detailItemId.current === id)
+        setIsLoading(false);
     }
   }, [id]);
 
@@ -137,8 +160,21 @@ export const WorkItemDetailPage: React.FC = () => {
     }
   }, []);
 
+  const item = itemResult && itemResult.workItemId === id ? itemResult.item : null;
+  const currentDetailError =
+    detailError &&
+    detailError.workItemId === id &&
+    detailError.requestId === detailRequestSequence.current
+      ? detailError.message
+      : null;
+  const isCurrentDetailLoading = isLoading || (!item && currentDetailError === null);
   const currentActivityResult = activityResult?.workItemId === id ? activityResult : null;
   const isCurrentActivityLoading = isActivityLoading || currentActivityResult === null;
+
+  const updateCurrentItem = (nextItem: WorkItem) => {
+    if (!id || detailItemId.current !== id) return;
+    setItemResult({ workItemId: id, item: nextItem });
+  };
 
   useEffect(() => {
     void fetchDetail();
@@ -168,7 +204,7 @@ export const WorkItemDetailPage: React.FC = () => {
     setStatusError(null);
     setIsChangingStatus(true);
     try {
-      setItem(await workItemsApi.changeStatus(id, nextStatus));
+      updateCurrentItem(await workItemsApi.changeStatus(id, nextStatus));
       await fetchActivity();
     } catch (err: unknown) {
       setStatusError(
@@ -185,7 +221,7 @@ export const WorkItemDetailPage: React.FC = () => {
     setAssignmentError(null);
     setIsSavingAssignee(true);
     try {
-      setItem(await workItemsApi.assign(id, assigneeDraft.trim() || null));
+      updateCurrentItem(await workItemsApi.assign(id, assigneeDraft.trim() || null));
       await fetchActivity();
     } catch (err: unknown) {
       setAssignmentError(
@@ -202,7 +238,7 @@ export const WorkItemDetailPage: React.FC = () => {
     setIsSavingAssignee(true);
     try {
       const updated = await workItemsApi.assign(id, null);
-      setItem(updated);
+      updateCurrentItem(updated);
       setAssigneeDraft('');
       await fetchActivity();
     } catch (err: unknown) {
@@ -222,12 +258,12 @@ export const WorkItemDetailPage: React.FC = () => {
       priority: request.priority,
       categoryId: request.categoryId,
     });
-    setItem(updated);
+    updateCurrentItem(updated);
     setIsEditing(false);
     await fetchActivity();
   };
 
-  if (isLoading) {
+  if (isCurrentDetailLoading) {
     return (
       <div className="space-y-6" role="status" aria-label="Loading work item">
         <Skeleton className="h-8 w-32" />
@@ -245,7 +281,7 @@ export const WorkItemDetailPage: React.FC = () => {
     );
   }
 
-  if (error || !item) {
+  if (currentDetailError || !item) {
     return (
       <div className="space-y-6">
         <Link
@@ -257,7 +293,9 @@ export const WorkItemDetailPage: React.FC = () => {
         </Link>
         <ErrorState
           title="Could not load work item"
-          message={error || 'The requested work item could not be retrieved.'}
+          message={
+            currentDetailError || 'The requested work item could not be retrieved.'
+          }
           onRetry={() => void fetchDetail()}
         />
       </div>

@@ -22,7 +22,7 @@ An item's update and its activity event are saved together in one `SaveChanges`.
 
 - Domain and application unit tests cover entity invariants, allowed/denied and same-state transitions, version increments, service behavior, and event creation.
 - PostgreSQL integration tests deterministically load the same version into independent contexts, verify the winning lifecycle change and stale-write conflict, confirm activity rollback, test conflict Problem Details, and cover all same-state HTTP conflicts and migration compatibility.
-- React Testing Library and Vitest tests cover create-form validation and submission, server field errors, list loading/error/empty/populated states, search debounce and URL state, pagination, detail activity rendering and stale-response protection across route changes, edits, invalid-transition messaging, and stale status/edit/assignment conflict messaging.
+- React Testing Library and Vitest tests cover create-form validation and submission, server field errors, list loading/error/empty/populated states, search debounce and URL state, pagination, detail and activity rendering with stale-response protection across route changes, edits, invalid-transition messaging, and stale status/edit/assignment conflict messaging.
 - Frontend CI runs formatting, lint, tests, and the production build. Backend CI runs format, build, unit tests, and PostgreSQL integration tests.
 
 Run frontend verification from `frontend/`:

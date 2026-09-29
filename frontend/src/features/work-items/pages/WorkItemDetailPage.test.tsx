@@ -139,6 +139,37 @@ describe('WorkItemDetailPage', () => {
     expect(screen.queryByText(activity[0].description)).toBeNull();
   });
 
+  it('ignores a late detail response after navigating to another work item', async () => {
+    const user = userEvent.setup();
+    let resolveFirstDetail: ((item: WorkItem) => void) | undefined;
+    vi.mocked(workItemsApi.getById).mockImplementation((id) => {
+      if (id === item.id)
+        return new Promise((resolve) => {
+          resolveFirstDetail = resolve;
+        });
+      return Promise.resolve(secondItem);
+    });
+    vi.mocked(workItemsApi.getActivity).mockImplementation((id) =>
+      Promise.resolve(id === secondItem.id ? secondActivity : activity)
+    );
+
+    renderDetail();
+    expect(screen.getByRole('status', { name: 'Loading work item' })).toBeTruthy();
+
+    await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+
+    expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
+    expect(workItemsApi.getById).toHaveBeenCalledWith(item.id);
+    expect(workItemsApi.getById).toHaveBeenCalledWith(secondItem.id);
+
+    await act(async () => {
+      resolveFirstDetail?.(item);
+    });
+
+    expect(screen.getByRole('heading', { name: secondItem.title })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: item.title })).toBeNull();
+  });
+
   it('edits descriptive fields without changing status', async () => {
     const user = userEvent.setup();
     const updated: WorkItem = {
