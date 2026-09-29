@@ -1,5 +1,5 @@
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { render, screen } from '@testing-library/react';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/types/api';
@@ -34,6 +34,12 @@ const item: WorkItem = {
   updatedAtUtc: '2026-09-29T10:00:00Z',
 };
 
+const secondItem: WorkItem = {
+  ...item,
+  id: 'item-99',
+  title: 'Prepare release notes',
+};
+
 const categories: Category[] = [
   { id: 'category-1', name: 'Operations', isActive: true },
   { id: 'category-2', name: 'Support', isActive: true },
@@ -58,9 +64,21 @@ const activity: WorkItemActivity[] = [
   },
 ];
 
+const secondActivity: WorkItemActivity[] = [
+  {
+    id: 'event-99',
+    workItemId: secondItem.id,
+    eventType: 'Created',
+    description: 'Release notes work item created',
+    createdAtUtc: '2026-09-29T11:00:00Z',
+    actorUserId: null,
+  },
+];
+
 const renderDetail = () =>
   render(
     <MemoryRouter initialEntries={[`/work-items/${item.id}`]}>
+      <Link to={`/work-items/${secondItem.id}`}>Open second work item</Link>
       <Routes>
         <Route path="/work-items/:id" element={<WorkItemDetailPage />} />
       </Routes>
@@ -87,6 +105,38 @@ describe('WorkItemDetailPage', () => {
       activityText.indexOf('Work item created')
     );
     expect(activityText.match(/System/g)).toHaveLength(2);
+  });
+
+  it('ignores a late activity response after navigating to another work item', async () => {
+    const user = userEvent.setup();
+    let resolveFirstActivity: ((events: WorkItemActivity[]) => void) | undefined;
+    vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
+      id === secondItem.id ? secondItem : item
+    );
+    vi.mocked(workItemsApi.getActivity).mockImplementation((id) => {
+      if (id === item.id)
+        return new Promise((resolve) => {
+          resolveFirstActivity = resolve;
+        });
+      return Promise.resolve(secondActivity);
+    });
+
+    renderDetail();
+    expect(await screen.findByRole('heading', { name: item.title })).toBeTruthy();
+    expect(workItemsApi.getActivity).toHaveBeenCalledWith(item.id);
+
+    await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+
+    expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
+    expect(await screen.findByText(secondActivity[0].description)).toBeTruthy();
+    expect(workItemsApi.getActivity).toHaveBeenCalledWith(secondItem.id);
+
+    await act(async () => {
+      resolveFirstActivity?.(activity);
+    });
+
+    expect(screen.getByText(secondActivity[0].description)).toBeTruthy();
+    expect(screen.queryByText(activity[0].description)).toBeNull();
   });
 
   it('edits descriptive fields without changing status', async () => {

@@ -1,4 +1,11 @@
-import React, { FormEvent, useCallback, useEffect, useState } from 'react';
+import React, {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, ArrowLeft, Calendar, Check, Clock, Copy, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -49,12 +56,17 @@ const activityLabels: Record<WorkItemActivity['eventType'], string> = {
 
 export const WorkItemDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const activityRequestSequence = useRef(0);
+  const activityItemId = useRef(id);
   const [item, setItem] = useState<WorkItem | null>(null);
-  const [activity, setActivity] = useState<WorkItemActivity[]>([]);
+  const [activityResult, setActivityResult] = useState<{
+    workItemId: string;
+    events: WorkItemActivity[];
+    error?: string;
+  } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActivityLoading, setIsActivityLoading] = useState(true);
-  const [activityError, setActivityError] = useState<string | null>(null);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -64,6 +76,11 @@ export const WorkItemDetailPage: React.FC = () => {
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assigneeDraft, setAssigneeDraft] = useState('');
   const [copied, setCopied] = useState(false);
+
+  useLayoutEffect(() => {
+    activityItemId.current = id;
+    activityRequestSequence.current++;
+  }, [id]);
 
   const fetchDetail = useCallback(async () => {
     if (!id) {
@@ -88,17 +105,24 @@ export const WorkItemDetailPage: React.FC = () => {
   }, [id]);
 
   const fetchActivity = useCallback(async () => {
-    if (!id) return;
+    if (!id || activityItemId.current !== id) return;
+    const requestId = ++activityRequestSequence.current;
     setIsActivityLoading(true);
-    setActivityError(null);
     try {
-      setActivity(await workItemsApi.getActivity(id));
+      const events = await workItemsApi.getActivity(id);
+      if (requestId === activityRequestSequence.current && activityItemId.current === id)
+        setActivityResult({ workItemId: id, events });
     } catch (err: unknown) {
-      setActivityError(
-        err instanceof Error ? err.message : 'Could not load work item activity.'
-      );
+      if (requestId === activityRequestSequence.current && activityItemId.current === id)
+        setActivityResult({
+          workItemId: id,
+          events: [],
+          error:
+            err instanceof Error ? err.message : 'Could not load work item activity.',
+        });
     } finally {
-      setIsActivityLoading(false);
+      if (requestId === activityRequestSequence.current && activityItemId.current === id)
+        setIsActivityLoading(false);
     }
   }, [id]);
 
@@ -112,6 +136,9 @@ export const WorkItemDetailPage: React.FC = () => {
       );
     }
   }, []);
+
+  const currentActivityResult = activityResult?.workItemId === id ? activityResult : null;
+  const isCurrentActivityLoading = isActivityLoading || currentActivityResult === null;
 
   useEffect(() => {
     void fetchDetail();
@@ -337,44 +364,48 @@ export const WorkItemDetailPage: React.FC = () => {
               <CardTitle>Activity history</CardTitle>
             </CardHeader>
             <CardContent>
-              {isActivityLoading && (
+              {isCurrentActivityLoading && (
                 <p className="text-sm text-slate-500" role="status">
                   Loading activity…
                 </p>
               )}
-              {!isActivityLoading && activityError && (
+              {!isCurrentActivityLoading && currentActivityResult?.error && (
                 <ErrorState
                   title="Could not load activity"
-                  message={activityError}
+                  message={currentActivityResult.error}
                   onRetry={() => void fetchActivity()}
                 />
               )}
-              {!isActivityLoading && !activityError && activity.length === 0 && (
-                <p className="text-sm text-slate-500">
-                  No activity has been recorded yet.
-                </p>
-              )}
-              {!isActivityLoading && !activityError && activity.length > 0 && (
-                <ol className="space-y-4" aria-label="Work item activity, newest first">
-                  {activity.map((event) => (
-                    <li
-                      key={event.id}
-                      className="flex gap-3 border-l-2 border-slate-200 pl-4"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-800">
-                          {event.description}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {activityLabels[event.eventType]} ·{' '}
-                          {event.actorUserId ?? 'System'} ·{' '}
-                          {formatDate(event.createdAtUtc)}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
+              {!isCurrentActivityLoading &&
+                !currentActivityResult?.error &&
+                currentActivityResult.events.length === 0 && (
+                  <p className="text-sm text-slate-500">
+                    No activity has been recorded yet.
+                  </p>
+                )}
+              {!isCurrentActivityLoading &&
+                !currentActivityResult?.error &&
+                currentActivityResult.events.length > 0 && (
+                  <ol className="space-y-4" aria-label="Work item activity, newest first">
+                    {currentActivityResult.events.map((event) => (
+                      <li
+                        key={event.id}
+                        className="flex gap-3 border-l-2 border-slate-200 pl-4"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-800">
+                            {event.description}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {activityLabels[event.eventType]} ·{' '}
+                            {event.actorUserId ?? 'System'} ·{' '}
+                            {formatDate(event.createdAtUtc)}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
             </CardContent>
           </Card>
         </div>
