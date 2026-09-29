@@ -78,7 +78,7 @@ export const WorkItemDetailPage: React.FC = () => {
     requestId: number;
     message: string;
   } | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [editingItem, setEditingItem] = useState<WorkItem | null>(null);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [isSavingAssignee, setIsSavingAssignee] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -93,6 +93,7 @@ export const WorkItemDetailPage: React.FC = () => {
     activityRequestSequence.current++;
     setStatusError(null);
     setAssignmentError(null);
+    setEditingItem(null);
   }, [id]);
 
   const fetchDetail = useCallback(async () => {
@@ -196,7 +197,7 @@ export const WorkItemDetailPage: React.FC = () => {
   };
 
   const handleChangeStatus = async (nextStatus: WorkItemStatus) => {
-    if (!id) return;
+    if (!id || !item) return;
     if (
       nextStatus === 'Done' &&
       !window.confirm('Mark this work item as Done? This status cannot be changed later.')
@@ -206,7 +207,12 @@ export const WorkItemDetailPage: React.FC = () => {
     setStatusError(null);
     setIsChangingStatus(true);
     try {
-      updateCurrentItem(await workItemsApi.changeStatus(id, nextStatus));
+      updateCurrentItem(
+        await workItemsApi.changeStatus(id, {
+          status: nextStatus,
+          expectedVersion: item.version,
+        })
+      );
       await fetchActivity();
     } catch (err: unknown) {
       if (detailItemId.current === id)
@@ -220,11 +226,16 @@ export const WorkItemDetailPage: React.FC = () => {
 
   const handleAssign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!id) return;
+    if (!id || !item) return;
     setAssignmentError(null);
     setIsSavingAssignee(true);
     try {
-      updateCurrentItem(await workItemsApi.assign(id, assigneeDraft.trim() || null));
+      updateCurrentItem(
+        await workItemsApi.assign(id, {
+          assigneeName: assigneeDraft.trim() || null,
+          expectedVersion: item.version,
+        })
+      );
       await fetchActivity();
     } catch (err: unknown) {
       if (detailItemId.current === id)
@@ -237,13 +248,16 @@ export const WorkItemDetailPage: React.FC = () => {
   };
 
   const handleUnassign = async () => {
-    if (!id) return;
+    if (!id || !item) return;
     setAssignmentError(null);
     setIsSavingAssignee(true);
     try {
-      const updated = await workItemsApi.assign(id, null);
+      const updated = await workItemsApi.assign(id, {
+        assigneeName: null,
+        expectedVersion: item.version,
+      });
       updateCurrentItem(updated);
-      setAssigneeDraft('');
+      if (detailItemId.current === id) setAssigneeDraft('');
       await fetchActivity();
     } catch (err: unknown) {
       if (detailItemId.current === id)
@@ -256,15 +270,16 @@ export const WorkItemDetailPage: React.FC = () => {
   };
 
   const handleEdit = async (request: CreateWorkItemRequest) => {
-    if (!id) return;
+    if (!id || !editingItem || editingItem.id !== id) return;
     const updated = await workItemsApi.update(id, {
       title: request.title,
       description: request.description,
       priority: request.priority,
       categoryId: request.categoryId,
+      expectedVersion: editingItem.version,
     });
     updateCurrentItem(updated);
-    setIsEditing(false);
+    if (detailItemId.current === id) setEditingItem(null);
     await fetchActivity();
   };
 
@@ -338,7 +353,7 @@ export const WorkItemDetailPage: React.FC = () => {
           </div>
         }
         action={
-          <Button variant="outline" onClick={() => setIsEditing(true)}>
+          <Button variant="outline" onClick={() => setEditingItem(item)}>
             Edit details
           </Button>
         }
@@ -555,8 +570,8 @@ export const WorkItemDetailPage: React.FC = () => {
       </div>
 
       <Modal
-        isOpen={isEditing}
-        onClose={() => setIsEditing(false)}
+        isOpen={editingItem !== null}
+        onClose={() => setEditingItem(null)}
         title="Edit work item details"
         description="Status changes are handled separately in the workflow controls."
         className="max-h-[90vh] overflow-y-auto"
@@ -577,18 +592,20 @@ export const WorkItemDetailPage: React.FC = () => {
             </Button>
           </div>
         )}
-        <WorkItemForm
-          categories={categories}
-          initialValues={{
-            title: item.title,
-            description: item.description,
-            priority: item.priority,
-            categoryId: item.categoryId,
-          }}
-          submitLabel="Save changes"
-          onCancel={() => setIsEditing(false)}
-          onSubmit={handleEdit}
-        />
+        {editingItem && (
+          <WorkItemForm
+            categories={categories}
+            initialValues={{
+              title: editingItem.title,
+              description: editingItem.description,
+              priority: editingItem.priority,
+              categoryId: editingItem.categoryId,
+            }}
+            submitLabel="Save changes"
+            onCancel={() => setEditingItem(null)}
+            onSubmit={handleEdit}
+          />
+        )}
       </Modal>
     </div>
   );

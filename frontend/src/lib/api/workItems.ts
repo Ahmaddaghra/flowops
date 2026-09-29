@@ -53,18 +53,14 @@ export const workItemsApi = {
     });
   },
 
-  changeStatus: async (
-    id: string,
-    status: ChangeStatusRequest['status']
-  ): Promise<WorkItem> => {
+  changeStatus: async (id: string, request: ChangeStatusRequest): Promise<WorkItem> => {
     return apiClient<WorkItem>(`/work-items/${id}/status`, {
       method: 'POST',
-      body: JSON.stringify({ status } satisfies ChangeStatusRequest),
+      body: JSON.stringify(request),
     });
   },
 
-  assign: async (id: string, assigneeName: string | null): Promise<WorkItem> => {
-    const request: AssignWorkItemRequest = { assigneeName };
+  assign: async (id: string, request: AssignWorkItemRequest): Promise<WorkItem> => {
     return apiClient<WorkItem>(`/work-items/${id}/assign`, {
       method: 'POST',
       body: JSON.stringify(request),

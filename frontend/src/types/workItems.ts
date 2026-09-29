@@ -11,6 +11,7 @@ export type WorkItemActivityType =
 
 export interface WorkItem {
   id: string;
+  version: number;
   title: string;
   description: string | null;
   status: WorkItemStatus;
@@ -56,14 +57,16 @@ export interface CreateWorkItemRequest {
 export type UpdateWorkItemRequest = Pick<
   CreateWorkItemRequest,
   'title' | 'description' | 'priority' | 'categoryId'
->;
+> & { expectedVersion: number };
 
 export interface ChangeStatusRequest {
   status: WorkItemStatus;
+  expectedVersion: number;
 }
 
 export interface AssignWorkItemRequest {
   assigneeName: string | null;
+  expectedVersion: number;
 }
 
 export interface WorkItemQuery {
