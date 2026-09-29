@@ -21,6 +21,7 @@ import { formatDate } from '@/lib/utils';
 import { WorkItemPriorityBadge } from '../components/WorkItemPriorityBadge';
 import { WorkItemStatusBadge } from '../components/WorkItemStatusBadge';
 import { WorkItemForm } from '../components/WorkItemForm';
+import { workItemMutationErrorMessage } from '../utils/mutationErrorMessage';
 
 const legalNextStatuses: Record<WorkItemStatus, WorkItemStatus[]> = {
   Todo: ['InProgress', 'Blocked'],
@@ -144,11 +145,7 @@ export const WorkItemDetailPage: React.FC = () => {
       await fetchActivity();
     } catch (err: unknown) {
       setStatusError(
-        err instanceof ApiError && err.status === 409
-          ? 'The server rejected this status change. Refresh the item and try an allowed transition.'
-          : err instanceof Error
-            ? err.message
-            : 'Could not change the work item status.'
+        workItemMutationErrorMessage(err, 'Could not change the work item status.')
       );
     } finally {
       setIsChangingStatus(false);
@@ -165,7 +162,7 @@ export const WorkItemDetailPage: React.FC = () => {
       await fetchActivity();
     } catch (err: unknown) {
       setAssignmentError(
-        err instanceof Error ? err.message : 'Could not update the assignment.'
+        workItemMutationErrorMessage(err, 'Could not update the assignment.')
       );
     } finally {
       setIsSavingAssignee(false);
@@ -183,7 +180,7 @@ export const WorkItemDetailPage: React.FC = () => {
       await fetchActivity();
     } catch (err: unknown) {
       setAssignmentError(
-        err instanceof Error ? err.message : 'Could not unassign this work item.'
+        workItemMutationErrorMessage(err, 'Could not unassign this work item.')
       );
     } finally {
       setIsSavingAssignee(false);

@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { ApiError } from '@/types/api';
 import { Category, CreateWorkItemRequest, WorkItemPriority } from '@/types/workItems';
+import { workItemMutationErrorMessage } from '../utils/mutationErrorMessage';
 
 interface WorkItemFormProps {
   categories: Category[];
@@ -82,10 +83,12 @@ export const WorkItemForm: React.FC<WorkItemFormProps> = ({
       if (error instanceof ApiError) {
         setErrors(fieldErrorsFrom(error));
         setSubmitError(
-          error.problemDetails?.detail ??
-            (error.status === 0
-              ? error.message
-              : 'Please review the highlighted fields and try again.')
+          error.status === 409
+            ? workItemMutationErrorMessage(error, 'Could not save the work item.')
+            : (error.problemDetails?.detail ??
+                (error.status === 0
+                  ? error.message
+                  : 'Please review the highlighted fields and try again.'))
         );
       } else {
         setSubmitError(

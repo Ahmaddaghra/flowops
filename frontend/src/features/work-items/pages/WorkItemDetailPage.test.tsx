@@ -122,7 +122,12 @@ describe('WorkItemDetailPage', () => {
 
   it('shows a clear conflict when the server rejects a status transition', async () => {
     const user = userEvent.setup();
-    vi.mocked(workItemsApi.changeStatus).mockRejectedValue(new ApiError('Conflict', 409));
+    vi.mocked(workItemsApi.changeStatus).mockRejectedValue(
+      new ApiError('A work item cannot transition from Todo to InProgress.', 409, {
+        title: 'Invalid Work Item Transition',
+        detail: 'A work item cannot transition from Todo to InProgress.',
+      })
+    );
     renderDetail();
     await screen.findByText(item.title);
 
@@ -130,7 +135,58 @@ describe('WorkItemDetailPage', () => {
 
     expect(
       await screen.findByText(
-        'The server rejected this status change. Refresh the item and try an allowed transition.'
+        'This status change is not allowed: A work item cannot transition from Todo to InProgress.'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/modified by another request/i)).toBeNull();
+  });
+
+  it('explains when a status mutation conflicts with a newer server version', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.changeStatus).mockRejectedValue(
+      new ApiError(
+        'This work item was modified by another request. Refresh it and try again.',
+        409,
+        {
+          title: 'Work Item Concurrency Conflict',
+          detail:
+            'This work item was modified by another request. Refresh it and try again.',
+        }
+      )
+    );
+    renderDetail();
+    await screen.findByText(item.title);
+
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+
+    expect(
+      await screen.findByText(
+        'This work item was modified by another request. Refresh it and try again.'
+      )
+    ).toBeTruthy();
+  });
+
+  it('explains stale assignment conflicts and prompts refresh', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.assign).mockRejectedValue(
+      new ApiError(
+        'This work item was modified by another request. Refresh it and try again.',
+        409,
+        {
+          title: 'Work Item Concurrency Conflict',
+          detail:
+            'This work item was modified by another request. Refresh it and try again.',
+        }
+      )
+    );
+    renderDetail();
+    await screen.findByText(item.title);
+    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    expect(
+      await screen.findByText(
+        'This work item was modified by another request. Refresh it and try again.'
       )
     ).toBeTruthy();
   });

@@ -84,4 +84,42 @@ describe('WorkItemForm', () => {
 
     expect(await screen.findByText('The title was rejected by the server.')).toBeTruthy();
   });
+
+  it('shows the stale work item conflict when an edit loses an optimistic concurrency race', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi
+      .fn<(_request: CreateWorkItemRequest) => Promise<void>>()
+      .mockRejectedValue(
+        new ApiError(
+          'This work item was modified by another request. Refresh it and try again.',
+          409,
+          {
+            title: 'Work Item Concurrency Conflict',
+            detail:
+              'This work item was modified by another request. Refresh it and try again.',
+          }
+        )
+      );
+
+    render(
+      <WorkItemForm
+        categories={categories}
+        initialValues={{ title: 'Original title' }}
+        submitLabel="Save changes"
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    );
+
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Edited title');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(
+      await screen.findByText(
+        'This work item was modified by another request. Refresh it and try again.'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText('Title is required.')).toBeNull();
+  });
 });
