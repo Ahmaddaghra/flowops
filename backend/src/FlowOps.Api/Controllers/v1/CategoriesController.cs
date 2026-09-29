@@ -7,7 +7,6 @@ namespace FlowOps.Api.Controllers.v1;
 
 [ApiController]
 [Route("api/v1/categories")]
-[Produces("application/json")]
 public class CategoriesController : ControllerBase
 {
     private readonly IWorkItemService _workItemService;

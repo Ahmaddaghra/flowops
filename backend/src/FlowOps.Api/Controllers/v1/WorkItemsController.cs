@@ -7,7 +7,6 @@ namespace FlowOps.Api.Controllers.v1;
 
 [ApiController]
 [Route("api/v1/work-items")]
-[Produces("application/json")]
 public class WorkItemsController : ControllerBase
 {
     private readonly IWorkItemService _workItemService;
@@ -91,11 +90,6 @@ public class WorkItemsController : ControllerBase
         return events is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(events);
     }
 
-    private NotFoundObjectResult NotFoundProblem(string detail) => NotFound(new ProblemDetails
-    {
-        Status = StatusCodes.Status404NotFound,
-        Title = "Resource Not Found",
-        Detail = detail,
-        Instance = HttpContext.Request.Path
-    });
+    private ObjectResult NotFoundProblem(string detail) =>
+        Problem(statusCode: StatusCodes.Status404NotFound, title: "Resource Not Found", detail: detail, instance: HttpContext.Request.Path);
 }
