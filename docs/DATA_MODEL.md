@@ -49,7 +49,7 @@ WorkItem 1 ─── 0..* ActivityEvent
 - The lifecycle migration adds a nullable category reference and new tables/indexes. Integration coverage migrates a database containing a legacy work item and verifies it remains readable.
 - `AddWorkItemConcurrency` adds `WorkItems.Version` as a non-null column with default `1`, so existing rows remain valid and new domain entities start at version `1`.
 - Optimistic concurrency is enforced server-side for descriptive/category/priority edits, status changes, and assignment/unassignment. The token is intentionally not exposed in the Phase 3 response contract.
-- The migration's `Down` path removes the Phase 3 category reference and activity data. It is intended for controlled rollback, not as a data-preserving operation for Phase 3 history.
+- The `AddWorkItemConcurrency` migration's `Down` path drops only `WorkItems.Version`. The earlier `AddWorkItemLifecycle` migration's `Down` path removes the category reference and activity data; use that rollback only when Phase 3 history can be discarded.
 
 ## Deferred entities
 
