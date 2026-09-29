@@ -1,0 +1,153 @@
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/types/api';
+import { Category, WorkItem, WorkItemActivity } from '@/types/workItems';
+import { categoriesApi, workItemsApi } from '@/lib/api/workItems';
+import { WorkItemDetailPage } from './WorkItemDetailPage';
+
+vi.mock('@/lib/api/workItems', () => ({
+  categoriesApi: { list: vi.fn() },
+  workItemsApi: {
+    list: vi.fn(),
+    getById: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    changeStatus: vi.fn(),
+    assign: vi.fn(),
+    getActivity: vi.fn(),
+    getHealth: vi.fn(),
+  },
+}));
+
+const item: WorkItem = {
+  id: 'item-42',
+  title: 'Investigate login',
+  description: 'Intermittent failure',
+  status: 'Todo',
+  priority: 'Medium',
+  categoryId: 'category-1',
+  categoryName: 'Operations',
+  assigneeName: 'Ahmad',
+  createdAtUtc: '2026-09-29T10:00:00Z',
+  updatedAtUtc: '2026-09-29T10:00:00Z',
+};
+
+const categories: Category[] = [
+  { id: 'category-1', name: 'Operations', isActive: true },
+  { id: 'category-2', name: 'Support', isActive: true },
+];
+
+const activity: WorkItemActivity[] = [
+  {
+    id: 'event-2',
+    workItemId: item.id,
+    eventType: 'PriorityChanged',
+    description: 'Priority changed to High',
+    createdAtUtc: '2026-09-29T12:00:00Z',
+    actorUserId: null,
+  },
+  {
+    id: 'event-1',
+    workItemId: item.id,
+    eventType: 'Created',
+    description: 'Work item created',
+    createdAtUtc: '2026-09-29T10:00:00Z',
+    actorUserId: null,
+  },
+];
+
+const renderDetail = () =>
+  render(
+    <MemoryRouter initialEntries={[`/work-items/${item.id}`]}>
+      <Routes>
+        <Route path="/work-items/:id" element={<WorkItemDetailPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+describe('WorkItemDetailPage', () => {
+  beforeEach(() => {
+    vi.mocked(workItemsApi.getById).mockResolvedValue(item);
+    vi.mocked(workItemsApi.getActivity).mockResolvedValue(activity);
+    vi.mocked(categoriesApi.list).mockResolvedValue(categories);
+  });
+
+  it('renders activity newest first and uses the System actor fallback', async () => {
+    renderDetail();
+
+    expect(await screen.findByText('Priority changed to High')).toBeTruthy();
+    expect(screen.getByText('Work item created')).toBeTruthy();
+    const activityList = screen.getByRole('list', {
+      name: 'Work item activity, newest first',
+    });
+    const activityText = activityList.textContent ?? '';
+    expect(activityText.indexOf('Priority changed to High')).toBeLessThan(
+      activityText.indexOf('Work item created')
+    );
+    expect(activityText.match(/System/g)).toHaveLength(2);
+  });
+
+  it('edits descriptive fields without changing status', async () => {
+    const user = userEvent.setup();
+    const updated: WorkItem = {
+      ...item,
+      title: 'Updated login investigation',
+      priority: 'High',
+      categoryId: 'category-2',
+      categoryName: 'Support',
+    };
+    vi.mocked(workItemsApi.update).mockResolvedValue(updated);
+    renderDetail();
+    await screen.findByText(item.title);
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    const titleInput = await screen.findByLabelText('Title');
+    await user.clear(titleInput);
+    await user.type(titleInput, updated.title);
+    await user.selectOptions(screen.getByLabelText('Priority'), 'High');
+    await user.selectOptions(screen.getByLabelText('Category'), 'category-2');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('heading', { name: updated.title })).toBeTruthy();
+    expect(workItemsApi.update).toHaveBeenCalledWith(item.id, {
+      title: updated.title,
+      description: item.description,
+      priority: 'High',
+      categoryId: 'category-2',
+    });
+    expect(screen.getAllByText('To Do')).toHaveLength(2);
+  });
+
+  it('shows a clear conflict when the server rejects a status transition', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.changeStatus).mockRejectedValue(new ApiError('Conflict', 409));
+    renderDetail();
+    await screen.findByText(item.title);
+
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+
+    expect(
+      await screen.findByText(
+        'The server rejected this status change. Refresh the item and try an allowed transition.'
+      )
+    ).toBeTruthy();
+  });
+
+  it('updates the assignee and refreshes activity', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.assign).mockResolvedValue({ ...item, assigneeName: 'Sara' });
+    renderDetail();
+    await screen.findByText(item.title);
+
+    const assigneeInput = screen.getByLabelText('Assignee name');
+    await user.clear(assigneeInput);
+    await user.type(assigneeInput, 'Sara');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, 'Sara');
+    expect(await screen.findByText('Currently assigned to Sara')).toBeTruthy();
+    expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2);
+  });
+});
