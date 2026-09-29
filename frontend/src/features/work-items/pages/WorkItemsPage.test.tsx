@@ -1,5 +1,5 @@
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/types/api';
@@ -80,6 +80,34 @@ describe('WorkItemsPage', () => {
     expect(await screen.findByText('Database unavailable')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
   });
+
+  it.each(['Try Again', 'Refresh'])(
+    'keeps %s in foreground until the first successful list response',
+    async (action) => {
+      const user = userEvent.setup();
+      let resolveRetry: ((result: PagedResult<WorkItem>) => void) | undefined;
+      vi.mocked(workItemsApi.list)
+        .mockRejectedValueOnce(new ApiError('Initial request failed', 503))
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveRetry = resolve;
+          })
+        );
+      renderPage();
+      await screen.findByText('Initial request failed');
+
+      await user.click(screen.getByRole('button', { name: action }));
+      expect(screen.getByRole('status', { name: 'Loading work items' })).toBeTruthy();
+      expect(screen.queryByText('No work items yet')).toBeNull();
+      expect(screen.queryByText('No work items match these filters')).toBeNull();
+
+      await act(async () => {
+        resolveRetry?.(page([item]));
+      });
+      expect(await screen.findAllByText(item.title)).toHaveLength(2);
+      expect(workItemsApi.list).toHaveBeenCalledTimes(2);
+    }
+  );
 
   it('shows the global empty state when there are no items', async () => {
     renderPage();

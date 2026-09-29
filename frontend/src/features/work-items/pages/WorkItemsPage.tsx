@@ -107,13 +107,16 @@ export const WorkItemsPage: React.FC = () => {
   const fetchItems = useCallback(
     async (background = hasLoaded.current) => {
       const requestId = ++requestSequence.current;
-      if (background) setIsRefreshing(true);
+      if (background && hasLoaded.current) setIsRefreshing(true);
       else setIsLoading(true);
       setError(null);
 
       try {
         const page = await workItemsApi.list(query);
-        if (requestId === requestSequence.current) setResult(page);
+        if (requestId === requestSequence.current) {
+          setResult(page);
+          hasLoaded.current = true;
+        }
       } catch (err: unknown) {
         if (requestId === requestSequence.current) {
           if (err instanceof ApiError)
@@ -123,7 +126,6 @@ export const WorkItemsPage: React.FC = () => {
         }
       } finally {
         if (requestId === requestSequence.current) {
-          hasLoaded.current = true;
           setIsLoading(false);
           setIsRefreshing(false);
         }
