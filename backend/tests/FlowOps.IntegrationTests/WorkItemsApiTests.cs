@@ -258,6 +258,10 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.Equal(HttpStatusCode.OK, winningResponse.StatusCode);
         var winner = (await winningResponse.Content.ReadFromJsonAsync<WorkItemResponse>())!;
         Assert.Equal(2, winner.Version);
+        // Compare persisted representations, including the database's stored timestamps.
+        var persistedWinner = await GetAsync(created.Id);
+        Assert.Equal(winner.Version, persistedWinner.Version);
+        Assert.Equal("Winning title", persistedWinner.Title);
         var beforeActivity = (await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{created.Id}/activity"))!;
 
         using var staleResponse = operation switch
@@ -283,7 +287,7 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.DoesNotContain(nameof(DbUpdateConcurrencyException), problem.RootElement.GetRawText());
 
         var final = await GetAsync(created.Id);
-        Assert.Equal(JsonSerializer.Serialize(winner), JsonSerializer.Serialize(final));
+        Assert.Equal(JsonSerializer.Serialize(persistedWinner), JsonSerializer.Serialize(final));
         var finalActivity = (await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{created.Id}/activity"))!;
         Assert.Equal(beforeActivity.Select(x => x.Id), finalActivity.Select(x => x.Id));
         Assert.Equal(new[] { "TitleChanged", "Created" }, finalActivity.Select(x => x.EventType));
