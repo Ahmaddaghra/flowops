@@ -91,6 +91,8 @@ export const WorkItemDetailPage: React.FC = () => {
     detailRequestSequence.current++;
     activityItemId.current = id;
     activityRequestSequence.current++;
+    setStatusError(null);
+    setAssignmentError(null);
   }, [id]);
 
   const fetchDetail = useCallback(async () => {
@@ -207,9 +209,10 @@ export const WorkItemDetailPage: React.FC = () => {
       updateCurrentItem(await workItemsApi.changeStatus(id, nextStatus));
       await fetchActivity();
     } catch (err: unknown) {
-      setStatusError(
-        workItemMutationErrorMessage(err, 'Could not change the work item status.')
-      );
+      if (detailItemId.current === id)
+        setStatusError(
+          workItemMutationErrorMessage(err, 'Could not change the work item status.')
+        );
     } finally {
       setIsChangingStatus(false);
     }
@@ -224,9 +227,10 @@ export const WorkItemDetailPage: React.FC = () => {
       updateCurrentItem(await workItemsApi.assign(id, assigneeDraft.trim() || null));
       await fetchActivity();
     } catch (err: unknown) {
-      setAssignmentError(
-        workItemMutationErrorMessage(err, 'Could not update the assignment.')
-      );
+      if (detailItemId.current === id)
+        setAssignmentError(
+          workItemMutationErrorMessage(err, 'Could not update the assignment.')
+        );
     } finally {
       setIsSavingAssignee(false);
     }
@@ -242,9 +246,10 @@ export const WorkItemDetailPage: React.FC = () => {
       setAssigneeDraft('');
       await fetchActivity();
     } catch (err: unknown) {
-      setAssignmentError(
-        workItemMutationErrorMessage(err, 'Could not unassign this work item.')
-      );
+      if (detailItemId.current === id)
+        setAssignmentError(
+          workItemMutationErrorMessage(err, 'Could not unassign this work item.')
+        );
     } finally {
       setIsSavingAssignee(false);
     }

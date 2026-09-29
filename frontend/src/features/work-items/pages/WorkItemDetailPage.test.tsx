@@ -272,6 +272,85 @@ describe('WorkItemDetailPage', () => {
     ).toBeTruthy();
   });
 
+  it('clears status and assignment errors when opening another work item', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
+      id === secondItem.id ? secondItem : item
+    );
+    vi.mocked(workItemsApi.changeStatus).mockRejectedValue(
+      new ApiError('Status conflict for the first item.', 409, {
+        title: 'Invalid Work Item Transition',
+        detail: 'Status conflict for the first item.',
+      })
+    );
+    vi.mocked(workItemsApi.assign).mockRejectedValue(
+      new ApiError('Assignment conflict for the first item.', 409, {
+        title: 'Work Item Concurrency Conflict',
+        detail: 'Assignment conflict for the first item.',
+      })
+    );
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    expect(
+      await screen.findByText(
+        'This status change is not allowed: Status conflict for the first item.'
+      )
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Unassign' }));
+    expect(
+      await screen.findByText('Assignment conflict for the first item.')
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+    expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
+    expect(screen.queryByText(/Status conflict for the first item/)).toBeNull();
+    expect(screen.queryByText('Assignment conflict for the first item.')).toBeNull();
+  });
+
+  it('ignores late status and assignment conflicts from the previous work item', async () => {
+    const user = userEvent.setup();
+    let rejectStatus: ((error: unknown) => void) | undefined;
+    let rejectAssignment: ((error: unknown) => void) | undefined;
+    vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
+      id === secondItem.id ? secondItem : item
+    );
+    vi.mocked(workItemsApi.changeStatus).mockReturnValue(
+      new Promise<WorkItem>((_, reject) => {
+        rejectStatus = reject;
+      })
+    );
+    vi.mocked(workItemsApi.assign).mockReturnValue(
+      new Promise<WorkItem>((_, reject) => {
+        rejectAssignment = reject;
+      })
+    );
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    await user.clear(screen.getByLabelText('Assignee name'));
+    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, 'InProgress');
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, 'Sara');
+    await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+    expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
+
+    await act(async () => {
+      rejectStatus?.(new ApiError('Late status conflict from the first item.', 409));
+      rejectAssignment?.(
+        new ApiError('Late assignment conflict from the first item.', 409)
+      );
+    });
+
+    expect(screen.queryByText('Late status conflict from the first item.')).toBeNull();
+    expect(
+      screen.queryByText('Late assignment conflict from the first item.')
+    ).toBeNull();
+  });
+
   it('updates the assignee and refreshes activity', async () => {
     const user = userEvent.setup();
     vi.mocked(workItemsApi.assign).mockResolvedValue({ ...item, assigneeName: 'Sara' });
