@@ -11,9 +11,9 @@ The API is rooted at `/api/v1`. Request and response bodies use JSON. Swagger UI
 | `GET` | `/api/v1/work-items` | Searches, filters, sorts, and pages work items | `200`, `400` |
 | `POST` | `/api/v1/work-items` | Creates a Todo work item and its Created activity event | `201`, `400`, `404` |
 | `GET` | `/api/v1/work-items/{id}` | Reads a work item | `200`, `404` |
-| `PATCH` | `/api/v1/work-items/{id}` | Updates title, description, priority, and category | `200`, `400`, `404` |
+| `PATCH` | `/api/v1/work-items/{id}` | Updates title, description, priority, and category | `200`, `400`, `404`, `409` |
 | `POST` | `/api/v1/work-items/{id}/status` | Requests an allowed status transition | `200`, `400`, `404`, `409` |
-| `POST` | `/api/v1/work-items/{id}/assign` | Assigns or unassigns a display name | `200`, `400`, `404` |
+| `POST` | `/api/v1/work-items/{id}/assign` | Assigns or unassigns a display name | `200`, `400`, `404`, `409` |
 | `GET` | `/api/v1/work-items/{id}/activity` | Lists newest-first activity events | `200`, `404` |
 
 ### List query parameters
@@ -75,15 +75,17 @@ Unassign by sending a null or empty `assigneeName`:
 | `Blocked` | `InProgress`, `Todo` |
 | `Done` | None |
 
-The server enforces transitions and returns `409 Conflict` for a transition that violates these rules. The UI requests the transition; it does not define the authoritative rule.
+The server enforces transitions and returns `409 Conflict` for a transition that violates these rules. Self-transitions are invalid, including `Done` → `Done`. The UI requests the transition; it does not define the authoritative rule.
 
 ### Error responses
 
-Errors use RFC 7807 Problem Details with `application/problem+json`. Data annotation and query validation failures return `400` with field errors. Missing work items or categories return `404`. Invalid lifecycle transitions return `409`. The API does not include stack traces in client responses.
+Errors use RFC 7807 Problem Details with `application/problem+json`. Data annotation and query validation failures return `400` with field errors. Missing work items or categories return `404`. Invalid lifecycle transitions return `409` with title `Invalid Work Item Transition`.
+
+WorkItem mutations use an optimistic concurrency token enforced by EF Core on the server. If a request loaded an older version and another mutation saved first, the stale write returns `409` with title `Work Item Concurrency Conflict` and detail `This work item was modified by another request. Refresh it and try again.` The response does not expose EF or SQL details. The UI differentiates this stale-write conflict from an invalid status transition.
 
 ### Activity history
 
-Create, title, description, priority, category, status, and assignment changes produce activity events in the same database save as the associated work item change. No-op updates do not add events. Events currently have a nullable `actorUserId`; until Phase 4 authentication exists, the UI labels an absent actor as `System`.
+Create, title, description, priority, category, status, and assignment changes produce activity events in the same `SaveChanges` as the associated work item change. EF Core's transaction rolls back both the mutation and staged activity when the version check fails; a stale request cannot leave a ghost event. No-op descriptive updates do not add events. Events currently have a nullable `actorUserId`; until Phase 4 authentication exists, the UI labels an absent actor as `System`.
 
 ## Scope deferred to later phases
 

@@ -12,15 +12,17 @@ Phase 3 adds one end-to-end work item lifecycle from PostgreSQL through the API 
 
 ## API and data changes
 
-The versioned API contract and request examples are in [API Design](../API_DESIGN.md). The Phase 3 migration adds `Categories` and `ActivityEvents`, a nullable category reference, and query indexes. It seeds four stable categories and preserves legacy work items. See [Data Model](../DATA_MODEL.md) for constraints and relationships.
+The versioned API contract and request examples are in [API Design](../API_DESIGN.md). The Phase 3 migrations add `Categories` and `ActivityEvents`, a nullable category reference, query indexes, and a `Version` concurrency token. They seed four stable categories, initialize existing work items to version `1`, and preserve legacy records. See [Data Model](../DATA_MODEL.md) for constraints and relationships.
 
-An item's update and its activity event are saved together. No-op updates do not add events. Status rules are enforced in the domain and return `409 Conflict` for an invalid transition. Assignment stores a display name until Phase 4 establishes user identity. `ActorUserId` remains nullable and the UI displays `System` when it is absent.
+Every meaningful WorkItem mutation increments `Version`; no-op descriptive updates leave it unchanged. EF Core includes the original token in the update predicate, so concurrent edits, category/priority changes, status transitions, and assignments cannot silently overwrite each other. The persistence layer translates stale writes to an application conflict; the API returns `409 application/problem+json` with title `Work Item Concurrency Conflict` and a refresh/retry detail.
+
+An item's update and its activity event are saved together in one `SaveChanges`. A concurrency failure rolls the database transaction back, including any staged activity event. No-op descriptive updates do not add events. The domain rejects every status transition outside the documented matrix, including same-state requests; the API returns `409 Conflict` for those invalid transitions as well. Assignment stores a display name until Phase 4 establishes user identity. `ActorUserId` remains nullable and the UI displays `System` when it is absent.
 
 ## Automated verification
 
-- Domain and application unit tests cover entity invariants, allowed/denied transitions, service behavior, and event creation.
-- PostgreSQL API integration tests exercise create/read/update, categories, assignment, activity ordering, validation, not found, status conflicts, query filters/sort/pagination, and migration compatibility with a pre-existing Phase 1 work item.
-- React Testing Library and Vitest tests cover create-form validation and submission, server field errors, list loading/error/empty/populated states, search debounce and URL state, pagination, detail activity rendering, edits, status conflicts, and assignment refresh.
+- Domain and application unit tests cover entity invariants, allowed/denied and same-state transitions, version increments, service behavior, and event creation.
+- PostgreSQL integration tests deterministically load the same version into independent contexts, verify the winning lifecycle change and stale-write conflict, confirm activity rollback, test conflict Problem Details, and cover all same-state HTTP conflicts and migration compatibility.
+- React Testing Library and Vitest tests cover create-form validation and submission, server field errors, list loading/error/empty/populated states, search debounce and URL state, pagination, detail activity rendering, edits, invalid-transition messaging, and stale status/edit/assignment conflict messaging.
 - Frontend CI runs formatting, lint, tests, and the production build. Backend CI runs format, build, unit tests, and PostgreSQL integration tests.
 
 Run frontend verification from `frontend/`:
