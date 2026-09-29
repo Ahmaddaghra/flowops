@@ -11,6 +11,8 @@ public class FlowOpsDbContext : DbContext
     }
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

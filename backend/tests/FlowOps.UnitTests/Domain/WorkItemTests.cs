@@ -1,110 +1,160 @@
-using System;
 using FlowOps.Domain.Entities;
 using FlowOps.Domain.Enums;
-using Xunit;
+using FlowOps.Domain.Exceptions;
 
 namespace FlowOps.UnitTests.Domain;
 
 public class WorkItemTests
 {
     [Fact]
-    public void Constructor_WithValidTitle_InitializesWorkItemCorrectly()
+    public void Constructor_NormalizesTitleAndStartsTodo()
     {
-        // Arrange & Act
-        var item = new WorkItem(
-            title: "Fix authentication bug",
-            description: "Detailed description",
-            priority: WorkItemPriority.High,
-            assigneeName: "  Ahmad Daghra  "
-        );
+        var item = new WorkItem("  Repair login  ", createdAtUtc: DateTime.UnixEpoch);
 
-        // Assert
-        Assert.NotEqual(Guid.Empty, item.Id);
-        Assert.Equal("Fix authentication bug", item.Title);
-        Assert.Equal("Detailed description", item.Description);
+        Assert.Equal("Repair login", item.Title);
         Assert.Equal(WorkItemStatus.Todo, item.Status);
-        Assert.Equal(WorkItemPriority.High, item.Priority);
-        Assert.Equal("Ahmad Daghra", item.AssigneeName);
         Assert.Equal(DateTimeKind.Utc, item.CreatedAtUtc.Kind);
-        Assert.Equal(DateTimeKind.Utc, item.UpdatedAtUtc.Kind);
+        Assert.Equal(item.CreatedAtUtc, item.UpdatedAtUtc);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Constructor_WithNullOrEmptyTitle_ThrowsArgumentException(string? invalidTitle)
+    public void Constructor_RejectsMissingTitle(string? title)
     {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentException>(() => new WorkItem(title: invalidTitle!));
-        Assert.Contains("Title is required", ex.Message);
+        var exception = Assert.Throws<ArgumentException>(() => new WorkItem(title!));
+        Assert.Contains("Title is required", exception.Message);
     }
 
     [Fact]
-    public void Constructor_WithTitleExceedingMaxLength_ThrowsArgumentException()
+    public void Constructor_RejectsTitleOverLimit()
     {
-        // Arrange
-        var longTitle = new string('A', WorkItem.MaxTitleLength + 1);
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentException>(() => new WorkItem(title: longTitle));
-        Assert.Contains($"cannot exceed {WorkItem.MaxTitleLength}", ex.Message);
+        Assert.Throws<ArgumentException>(() => new WorkItem(new string('x', WorkItem.MaxTitleLength + 1)));
     }
 
     [Fact]
-    public void Constructor_WithDescriptionExceedingMaxLength_ThrowsArgumentException()
+    public void Constructor_RejectsDescriptionOverLimit()
     {
-        // Arrange
-        var longDesc = new string('D', WorkItem.MaxDescriptionLength + 1);
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentException>(() => new WorkItem(title: "Valid Title", description: longDesc));
-        Assert.Contains($"cannot exceed {WorkItem.MaxDescriptionLength}", ex.Message);
+        Assert.Throws<ArgumentException>(() => new WorkItem("Title", new string('x', WorkItem.MaxDescriptionLength + 1)));
     }
 
     [Fact]
-    public void Constructor_WithAssigneeNameExceedingMaxLength_ThrowsArgumentException()
+    public void Constructor_RejectsAssigneeOverLimit()
     {
-        // Arrange
-        var longAssignee = new string('U', WorkItem.MaxAssigneeNameLength + 1);
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentException>(() => new WorkItem(title: "Valid Title", assigneeName: longAssignee));
-        Assert.Contains($"cannot exceed {WorkItem.MaxAssigneeNameLength}", ex.Message);
+        Assert.Throws<ArgumentException>(() => new WorkItem("Title", assigneeName: new string('x', WorkItem.MaxAssigneeNameLength + 1)));
     }
 
     [Fact]
-    public void SetStatus_WithValidStatus_UpdatesStatusAndTimestamp()
+    public void ChangeTitle_TrimsAndUpdatesTimestamp()
     {
-        // Arrange
-        var item = new WorkItem(title: "Initial Title");
-        var initialUpdatedAt = item.UpdatedAtUtc;
+        var item = new WorkItem("Initial");
+        var originalTime = item.UpdatedAtUtc;
 
-        // Act
-        item.SetStatus(WorkItemStatus.InProgress);
+        Assert.True(item.ChangeTitle("  Updated  "));
 
-        // Assert
-        Assert.Equal(WorkItemStatus.InProgress, item.Status);
-        Assert.True(item.UpdatedAtUtc >= initialUpdatedAt);
+        Assert.Equal("Updated", item.Title);
+        Assert.True(item.UpdatedAtUtc > originalTime);
     }
 
     [Fact]
-    public void SetStatus_WithInvalidEnum_ThrowsArgumentException()
+    public void ChangeDescription_UpdatesDescription()
     {
-        // Arrange
-        var item = new WorkItem(title: "Initial Title");
+        var item = new WorkItem("Title");
 
-        // Act & Assert
-        Assert.Throws<ArgumentException>(() => item.SetStatus((WorkItemStatus)999));
+        Assert.True(item.ChangeDescription("details"));
+
+        Assert.Equal("details", item.Description);
     }
 
     [Fact]
-    public void SetPriority_WithInvalidEnum_ThrowsArgumentException()
+    public void ChangePriority_RejectsUndefinedEnum()
     {
-        // Arrange
-        var item = new WorkItem(title: "Initial Title");
+        var item = new WorkItem("Title");
 
-        // Act & Assert
-        Assert.Throws<ArgumentException>(() => item.SetPriority((WorkItemPriority)999));
+        Assert.Throws<ArgumentException>(() => item.ChangePriority((WorkItemPriority)999));
+    }
+
+    [Fact]
+    public void ChangeCategory_ChangesCategoryId()
+    {
+        var item = new WorkItem("Title");
+        var categoryId = Guid.NewGuid();
+
+        Assert.True(item.ChangeCategory(categoryId));
+
+        Assert.Equal(categoryId, item.CategoryId);
+    }
+
+    [Fact]
+    public void AssignAndUnassign_NormalizeEmptyAssignee()
+    {
+        var item = new WorkItem("Title");
+
+        Assert.True(item.Assign(" Ahmad "));
+        Assert.Equal("Ahmad", item.AssigneeName);
+        Assert.True(item.Assign(" "));
+        Assert.Null(item.AssigneeName);
+    }
+
+    [Fact]
+    public void NoOpMutations_DoNotChangeTimestamp()
+    {
+        var item = new WorkItem("Title", description: "details", priority: WorkItemPriority.High, assigneeName: "Ahmad");
+        var timestamp = item.UpdatedAtUtc;
+
+        Assert.False(item.ChangeTitle(" Title "));
+        Assert.False(item.ChangeDescription("details"));
+        Assert.False(item.ChangePriority(WorkItemPriority.High));
+        Assert.False(item.ChangeCategory(null));
+        Assert.False(item.Assign("Ahmad"));
+
+        Assert.Equal(timestamp, item.UpdatedAtUtc);
+    }
+
+    [Theory]
+    [InlineData(WorkItemStatus.Todo, WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.Todo, WorkItemStatus.Blocked)]
+    [InlineData(WorkItemStatus.InProgress, WorkItemStatus.Blocked)]
+    [InlineData(WorkItemStatus.InProgress, WorkItemStatus.Done)]
+    [InlineData(WorkItemStatus.Blocked, WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.Blocked, WorkItemStatus.Todo)]
+    public void ChangeStatus_AllowsDocumentedTransitions(WorkItemStatus current, WorkItemStatus next)
+    {
+        var item = new WorkItem("Title", status: current);
+
+        Assert.True(item.ChangeStatus(next));
+        Assert.Equal(next, item.Status);
+    }
+
+    [Theory]
+    [InlineData(WorkItemStatus.Todo, WorkItemStatus.Done)]
+    [InlineData(WorkItemStatus.InProgress, WorkItemStatus.Todo)]
+    [InlineData(WorkItemStatus.Blocked, WorkItemStatus.Done)]
+    [InlineData(WorkItemStatus.Done, WorkItemStatus.Todo)]
+    [InlineData(WorkItemStatus.Done, WorkItemStatus.InProgress)]
+    [InlineData(WorkItemStatus.Done, WorkItemStatus.Blocked)]
+    public void ChangeStatus_RejectsUndocumentedTransitions(WorkItemStatus current, WorkItemStatus next)
+    {
+        var item = new WorkItem("Title", status: current);
+
+        Assert.Throws<InvalidWorkItemTransitionException>(() => item.ChangeStatus(next));
+    }
+
+    [Fact]
+    public void ChangeStatus_RejectsUndefinedEnum()
+    {
+        var item = new WorkItem("Title");
+
+        Assert.Throws<ArgumentException>(() => item.ChangeStatus((WorkItemStatus)999));
+    }
+
+    [Fact]
+    public void Category_NormalizesNameAndCaseInsensitiveKey()
+    {
+        var category = new Category(Guid.NewGuid(), "  oPerations ");
+
+        Assert.Equal("oPerations", category.Name);
+        Assert.Equal("OPERATIONS", category.NameKey);
     }
 }

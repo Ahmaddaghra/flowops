@@ -23,6 +23,12 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
         builder.Property(x => x.AssigneeName)
             .HasMaxLength(WorkItem.MaxAssigneeNameLength);
 
+        builder.Property(x => x.CategoryId);
+        builder.HasOne(x => x.Category)
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.Property(x => x.Status)
             .HasConversion<string>()
             .HasMaxLength(50)
@@ -41,5 +47,8 @@ public class WorkItemConfiguration : IEntityTypeConfiguration<WorkItem>
 
         builder.HasIndex(x => x.Status);
         builder.HasIndex(x => x.CreatedAtUtc);
+        builder.HasIndex(x => x.Priority);
+        builder.HasIndex(x => x.CategoryId);
+        builder.HasIndex(x => x.AssigneeName);
     }
 }
