@@ -8,7 +8,7 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
-- **Phase 3 — Work Item Lifecycle (Implemented; local checks and browser acceptance passed; GitHub CI pending)**
+- **Phase 3 — Work Item Lifecycle (Implemented; PR #4 open)**
 
 ### Tech Stack Summary
 
