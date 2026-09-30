@@ -7,7 +7,8 @@ export type WorkItemActivityType =
   | 'PriorityChanged'
   | 'CategoryChanged'
   | 'StatusChanged'
-  | 'AssignmentChanged';
+  | 'AssignmentChanged'
+  | 'CommentAdded';
 
 export interface UserSummary {
   id: string;
@@ -66,6 +67,18 @@ export interface WorkItemActivity {
   actorUserId: string | null;
   actor: UserSummary | null;
   actorDisplayName: string;
+}
+
+export interface WorkItemComment {
+  id: string;
+  workItemId: string;
+  body: string;
+  createdAtUtc: string;
+  author: UserSummary;
+}
+
+export interface CreateCommentRequest {
+  body: string;
 }
 
 export interface CreateWorkItemRequest {

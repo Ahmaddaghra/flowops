@@ -21,6 +21,7 @@ import { WorkItemPriorityBadge } from '../components/WorkItemPriorityBadge';
 import { WorkItemStatusBadge } from '../components/WorkItemStatusBadge';
 import { WorkItemForm } from '../components/WorkItemForm';
 import { WorkItemAssignment } from '../components/WorkItemAssignment';
+import { WorkItemComments } from '../components/WorkItemComments';
 import { workItemMutationErrorMessage } from '../utils/mutationErrorMessage';
 
 const legalNextStatuses: Record<WorkItemStatus, WorkItemStatus[]> = {
@@ -45,6 +46,7 @@ const activityLabels: Record<WorkItemActivity['eventType'], string> = {
   CategoryChanged: 'Category updated',
   StatusChanged: 'Status changed',
   AssignmentChanged: 'Assignment changed',
+  CommentAdded: 'Comment added',
 };
 
 export const WorkItemDetailPage: React.FC = () => {
@@ -507,6 +509,11 @@ export const WorkItemDetailPage: React.FC = () => {
                 )}
             </CardContent>
           </Card>
+          <WorkItemComments
+            key={item.id}
+            workItemId={item.id}
+            onCommentAdded={() => void fetchActivity()}
+          />
         </div>
 
         <div className="space-y-6">

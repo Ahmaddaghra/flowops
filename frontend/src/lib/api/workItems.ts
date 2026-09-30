@@ -3,11 +3,13 @@ import {
   AssignWorkItemRequest,
   Category,
   ChangeStatusRequest,
+  CreateCommentRequest,
   CreateWorkItemRequest,
   PagedResult,
   UpdateWorkItemRequest,
   WorkItem,
   WorkItemActivity,
+  WorkItemComment,
   WorkItemQuery,
 } from '@/types/workItems';
 
@@ -69,6 +71,20 @@ export const workItemsApi = {
 
   getActivity: async (id: string): Promise<WorkItemActivity[]> => {
     return apiClient<WorkItemActivity[]>(`/work-items/${id}/activity`);
+  },
+
+  getComments: async (id: string): Promise<WorkItemComment[]> => {
+    return apiClient<WorkItemComment[]>(`/work-items/${id}/comments`);
+  },
+
+  addComment: async (
+    id: string,
+    request: CreateCommentRequest
+  ): Promise<WorkItemComment> => {
+    return apiClient<WorkItemComment>(`/work-items/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: request.body }),
+    });
   },
 
   getHealth: async (): Promise<{ status: string }> => {
