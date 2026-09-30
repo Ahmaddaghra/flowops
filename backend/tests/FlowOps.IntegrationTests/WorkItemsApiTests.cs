@@ -536,6 +536,12 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         public Task<IReadOnlyList<ActivityEventResponse>?> GetActivityAsync(Guid id, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<IReadOnlyList<CommentResponse>?> GetCommentsAsync(Guid id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<CommentResponse?> AddCommentAsync(Guid id, CreateCommentRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<CategoryResponse>> GetCategoriesAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }

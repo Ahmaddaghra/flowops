@@ -205,6 +205,39 @@ public class WorkItemService : IWorkItemService
         }).ToList();
     }
 
+    public async Task<IReadOnlyList<CommentResponse>?> GetCommentsAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        _authorization.RequireUser();
+        if (await _store.GetByIdAsync(id, cancellationToken) is null) return null;
+
+        var comments = await _store.GetCommentsAsync(id, cancellationToken);
+        var users = await _users.GetByIdsAsync(comments.Select(comment => comment.AuthorUserId).Distinct(), cancellationToken);
+        return comments.Select(comment => MapComment(comment, users)).ToList();
+    }
+
+    public async Task<CommentResponse?> AddCommentAsync(Guid id, CreateCommentRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var authorUserId = _authorization.RequireUser();
+        // Comments follow the read boundary; lifecycle mutation permissions and version do not apply.
+        if (await _store.GetByIdAsync(id, cancellationToken) is null) return null;
+
+        var comment = new Comment(id, authorUserId, request.Body);
+        var users = await _users.GetByIdsAsync([authorUserId], cancellationToken);
+        await _store.AddCommentAsync(comment, cancellationToken);
+        await _store.AddActivityEventAsync(
+            new ActivityEvent(id, ActivityEventType.CommentAdded, "Comment added", comment.CreatedAtUtc, authorUserId),
+            cancellationToken);
+        await _store.SaveChangesAsync(cancellationToken);
+
+        return MapComment(comment, users);
+    }
+
+    private static CommentResponse MapComment(Comment comment, IReadOnlyDictionary<Guid, UserSummaryResponse> users) =>
+        new(comment.Id, comment.WorkItemId, comment.Body, comment.CreatedAtUtc,
+            users.TryGetValue(comment.AuthorUserId, out var author)
+                ? author : new UserSummaryResponse(comment.AuthorUserId, "User unavailable"));
+
     private async Task<Category> GetActiveCategoryAsync(Guid categoryId, CancellationToken cancellationToken)
     {
         var category = await _store.GetCategoryByIdAsync(categoryId, cancellationToken);

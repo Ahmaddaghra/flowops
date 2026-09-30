@@ -95,6 +95,28 @@ public class WorkItemsController : ControllerBase
         return events is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(events);
     }
 
+    /// <summary>Returns oldest-first comments with safe author summaries.</summary>
+    [HttpGet("{id:guid}/comments")]
+    [ProducesResponseType(typeof(IReadOnlyList<CommentResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<CommentResponse>>> GetComments(Guid id, CancellationToken cancellationToken)
+    {
+        var comments = await _workItemService.GetCommentsAsync(id, cancellationToken);
+        return comments is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(comments);
+    }
+
+    /// <summary>Adds a comment and its activity event without changing the work item version.</summary>
+    [HttpPost("{id:guid}/comments")]
+    [ProducesResponseType(typeof(CommentResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CommentResponse>> AddComment(Guid id, [FromBody] CreateCommentRequest request, CancellationToken cancellationToken)
+    {
+        var comment = await _workItemService.AddCommentAsync(id, request, cancellationToken);
+        return comment is null ? NotFoundProblem($"Work item '{id}' was not found.")
+            : CreatedAtAction(nameof(GetComments), new { id }, comment);
+    }
+
     private ObjectResult NotFoundProblem(string detail) =>
         Problem(statusCode: StatusCodes.Status404NotFound, title: "Resource Not Found", detail: detail, instance: HttpContext.Request.Path);
 }
