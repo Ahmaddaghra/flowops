@@ -50,7 +50,7 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 
 ## Phase 4 — Authentication, Collaboration & QA (Implemented & Locally Verified)
 
-The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication, and Stage 4C was subsequently reviewed. Stage 4D's capability-driven assignment/edit/status controls were approved before Stage 4E. Stage 4E comments are completed and verified, including 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks. Stage 4F is completed and verified with 49 authenticated collection requests/123 equivalent API assertions, 28 manual case definitions, six historical defect reports, traceability, and final 110 unit/135 PostgreSQL/204 frontend tests. Stage 4G local gates pass with 110 unit/135 PostgreSQL/204 frontend tests, a fresh 49-request/123-assertion equivalent collection run, and 34 real Chromium desktop/mobile/keyboard checks. PR/CI/review delivery is in progress. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
+The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication, and Stage 4C was subsequently reviewed. Stage 4D's capability-driven assignment/edit/status controls were approved before Stage 4E. Stage 4E comments are completed and verified, including 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks. Stage 4F is completed and verified with 49 authenticated collection requests/123 equivalent API assertions, 28 manual case definitions, six historical defect reports, traceability, and final 110 unit/135 PostgreSQL/204 frontend tests. Stage 4G local gates pass with 110 unit/135 PostgreSQL/204 frontend tests, a fresh 49-request/123-assertion equivalent collection run, and 34 real Chromium desktop/mobile/keyboard checks. PR #5 is open and unmerged, backend/frontend Linux CI passes, and the Codex review request returned a usage-limit response; no completed automated review is claimed. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
 
 The final Stage 4C preflight also tightened the existing legacy boundary: an item with both creator and user assignee IDs null permits only Admin lifecycle edits, status changes, and assignment, until an Admin legitimately assigns a user. This focused backend correction adds regression coverage without beginning Stage 4D UI work.
 
@@ -63,7 +63,7 @@ The final Stage 4C preflight also tightened the existing legacy boundary: an ite
 7. [x] `test(api): expand remaining negative-path workflows and authenticated Postman requests` (Stage 4F)
 8. [x] `test(postman): publish baseline API collection and environment template` (delivered in Phase 3; authenticated expansion delivered in Stage 4F)
 9. [x] `docs(qa): add manual test suite, real development bug reports, and requirement traceability` (Stage 4F)
-10. [ ] `docs: finish Phase 4 documentation, browser QA, CI verification, and PR delivery` (Stage 4G)
+10. [x] `docs: finish Phase 4 documentation, browser QA, CI verification, and PR delivery` (Stage 4G; review quota limitation recorded)
 
 **Phase exit:** protected workflows are verified both manually and through integration tests.
 
