@@ -132,7 +132,8 @@ public class CommentsApiTests(FlowOpsApiFactory factory) : IClassFixture<FlowOps
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
         var persisted = Assert.Single(await verifyDb.Comments.AsNoTracking().ToListAsync());
         Assert.Equal(author.Id, persisted.AuthorUserId);
-        Assert.Equal(comment.CreatedAtUtc, persisted.CreatedAtUtc);
+        Assert.Equal(AtPostgresPrecision(comment.CreatedAtUtc), persisted.CreatedAtUtc);
+        Assert.Equal(persisted.CreatedAtUtc, retrieved.CreatedAtUtc);
     }
 
     [Fact]
@@ -240,7 +241,8 @@ public class CommentsApiTests(FlowOpsApiFactory factory) : IClassFixture<FlowOps
         var firstId = Guid.Parse("00000000-0000-0000-0000-000000000003");
         var tieFirstId = Guid.Parse("00000000-0000-0000-0000-000000000001");
         var tieLastId = Guid.Parse("00000000-0000-0000-0000-000000000002");
-        var timestamp = new DateTime(2026, 9, 30, 10, 0, 0, DateTimeKind.Utc);
+        // The seventh fractional digit exercises PostgreSQL's microsecond precision on every platform.
+        var timestamp = new DateTime(2026, 9, 30, 10, 0, 0, DateTimeKind.Utc).AddTicks(7);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
         foreach (var (id, created) in new[] { (tieLastId, timestamp), (firstId, timestamp.AddDays(-1)), (tieFirstId, timestamp) })
@@ -250,6 +252,8 @@ public class CommentsApiTests(FlowOpsApiFactory factory) : IClassFixture<FlowOps
                 """);
         var comments = (await client.GetFromJsonAsync<CommentResponse[]>(Route(item.Id)))!;
         Assert.Equal(new[] { firstId, tieFirstId, tieLastId }, comments.Select(comment => comment.Id));
+        Assert.Equal(AtPostgresPrecision(timestamp.AddDays(-1)), comments[0].CreatedAtUtc);
+        Assert.All(comments.Skip(1), comment => Assert.Equal(AtPostgresPrecision(timestamp), comment.CreatedAtUtc));
     }
 
     [Theory]
@@ -262,6 +266,7 @@ public class CommentsApiTests(FlowOpsApiFactory factory) : IClassFixture<FlowOps
         var item = await CreateItemAsync(client);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+        var before = await db.WorkItems.AsNoTracking().SingleAsync(row => row.Id == item.Id);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE FUNCTION reject_comment_write() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN RAISE EXCEPTION 'Injected comment transaction failure'; END; $$
@@ -277,8 +282,8 @@ public class CommentsApiTests(FlowOpsApiFactory factory) : IClassFixture<FlowOps
             await AssertProblemAsync(response, 500);
             await AssertNoCommentWritesAsync(item.Id);
             var unchanged = await db.WorkItems.AsNoTracking().SingleAsync(row => row.Id == item.Id);
-            Assert.Equal(item.Version, unchanged.Version);
-            Assert.Equal(item.UpdatedAtUtc, unchanged.UpdatedAtUtc);
+            Assert.Equal(before.Version, unchanged.Version);
+            Assert.Equal(before.UpdatedAtUtc, unchanged.UpdatedAtUtc);
         }
         finally
         {
@@ -323,6 +328,9 @@ public class CommentsApiTests(FlowOpsApiFactory factory) : IClassFixture<FlowOps
     }
 
     private static string Route(Guid itemId) => $"/api/v1/work-items/{itemId}/comments";
+
+    private static DateTime AtPostgresPrecision(DateTime timestamp) =>
+        new(timestamp.Ticks - timestamp.Ticks % TimeSpan.TicksPerMicrosecond, DateTimeKind.Utc);
 
     private static async Task<WorkItemResponse> CreateItemAsync(HttpClient client)
     {
