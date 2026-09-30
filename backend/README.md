@@ -1,6 +1,6 @@
 # FlowOps Backend
 
-The backend is a .NET 10 Web API organized into Domain, Application, Infrastructure, and API projects. PostgreSQL stores work items, comments, and ASP.NET Core Identity data. Domain stays independent of Identity; Application uses app-level identity/current-user abstractions and does not reference EF Core or Identity. The reviewed Stage 4A/4B foundation provides JWT authentication and server-side work item authorization. Stage 4C's authenticated frontend and Stage 4D's capability-driven assignment/edit/status controls consume these existing contracts. Stage 4E adds authenticated comments and atomic comment/activity persistence. Remaining Phase 4 QA artifacts are deferred.
+The backend is a .NET 10 Web API organized into Domain, Application, Infrastructure, and API projects. PostgreSQL stores work items, comments, and ASP.NET Core Identity data. Domain stays independent of Identity; Application uses app-level identity/current-user abstractions and does not reference EF Core or Identity. The reviewed Stage 4A/4B foundation provides JWT authentication and server-side work item authorization. Stage 4C's authenticated frontend and Stage 4D's capability-driven assignment/edit/status controls consume these existing contracts. Stage 4E adds authenticated comments and atomic comment/activity persistence. Phase 4 QA assets and final local verification are complete; [delivery status](../docs/phases/phase-4-auth-collaboration-qa.md) records PR/CI/review evidence.
 
 ## Authentication configuration
 

@@ -6,13 +6,13 @@ This collection verifies the implemented Stages 4A–4E contracts through eight 
 
 - .NET 10, PostgreSQL, the EF Core CLI and Postman are available locally.
 - Use the existing setup in [backend/README.md](../../backend/README.md) for private JWT configuration. A signing key must contain at least 32 UTF-8 bytes. No signing key belongs in Postman.
-- Create a separate database such as `flowops_stage4f_qa`. The connecting PostgreSQL account must be able to migrate that database.
+- Create a separate database such as `flowops_phase4_qa`. The connecting PostgreSQL account must be able to migrate that database.
 - Choose three distinct test email addresses and private throwaway passwords. Passwords require at least eight characters, uppercase, lowercase and a digit. The `.invalid` addresses in the environment are placeholders; FlowOps does not require email delivery.
 
 From the repository root, set the connection explicitly before migrations and API startup. Replace the connection placeholders with your isolated local database configuration:
 
 ```bash
-export ConnectionStrings__DefaultConnection='Host=localhost;Database=flowops_stage4f_qa;Username=CHANGE_ME;Password=CHANGE_ME'
+export ConnectionStrings__DefaultConnection='Host=localhost;Database=flowops_phase4_qa;Username=CHANGE_ME;Password=CHANGE_ME'
 
 dotnet restore backend/FlowOps.sln
 dotnet ef database update \
@@ -169,6 +169,6 @@ The API has no logout endpoint or token revocation service in Phase 4. Browser l
 
 ## Validation and evidence limits
 
-Postman JSON syntax and the official collection v2.1 schema are checked during Stage 4F. If an existing Postman CLI/Newman runner is available, the collection can be run directly against the QA server. No repository dependency is added solely to run it. When such a runner is unavailable, the Stage 4F checkpoint distinguishes equivalent API/script execution from native Postman/Newman execution; it does not claim a Postman desktop import that was not observed.
+Postman JSON syntax and the official collection v2.1 schema were checked during Stages 4F and 4G. If an existing Postman CLI/Newman runner is available, the collection can be run directly against the QA server. No repository dependency is added solely to run it. When such a runner is unavailable, the Stage 4F checkpoint distinguishes equivalent API/script execution from native Postman/Newman execution; it does not claim a Postman desktop import that was not observed.
 
-Current execution results, test totals, limitations and checkpoint status are recorded in the [Phase 4 document](../phases/phase-4-auth-collaboration-qa.md). Use the [manual suite](manual-test-cases.md), [resolved defect reports](bug-reports.md) and [traceability matrix](traceability.md) for UI/accessibility checks and requirements that need deeper automated evidence. Stage 4F does not start Stage 4G, Phase 5 or PR delivery.
+Current execution results, test totals, limitations and checkpoint status are recorded in the [Phase 4 document](../phases/phase-4-auth-collaboration-qa.md). Use the [manual suite](manual-test-cases.md), [resolved defect reports](bug-reports.md) and [traceability matrix](traceability.md) for UI/accessibility checks and requirements that need deeper automated evidence. Stage 4G repeats equivalent execution: all 49 requests and 123 named assertions pass against a fresh disposable database. Native Postman/Newman execution and GUI import remain unobserved; Phase 5 is deferred.

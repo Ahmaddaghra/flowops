@@ -1,6 +1,6 @@
 # Data Model
 
-This page records the schema through the Phase 4 Stage 4E comments checkpoint. Existing Phase 3 migrations remain unchanged: `20260929140705_AddWorkItemLifecycle` adds categories, activity history, and lifecycle query indexes; `20260929163759_AddWorkItemConcurrency` adds the concurrency token. The additive `20260929223011_AddIdentityFoundation` and `20260929223344_AddUserBackedWorkItems` migrations introduce identity and real user references without removing existing work items or activity. The additive `20260930092502_AddWorkItemComments` migration creates Comments without changing prior migrations or existing application/Identity rows.
+This page records the schema through completed Phase 4. Existing Phase 3 migrations remain unchanged: `20260929140705_AddWorkItemLifecycle` adds categories, activity history, and lifecycle query indexes; `20260929163759_AddWorkItemConcurrency` adds the concurrency token. The additive `20260929223011_AddIdentityFoundation` and `20260929223344_AddUserBackedWorkItems` migrations introduce identity and real user references without removing existing work items or activity. The additive `20260930092502_AddWorkItemComments` migration creates Comments without changing prior migrations or existing application/Identity rows.
 
 ## Identity users and roles
 

@@ -1,6 +1,6 @@
 # FlowOps Frontend
 
-React 19, TypeScript, Vite, Tailwind, and React Router provide the responsive work item client. Stage 4C adds authentication on top of the reviewed backend Identity/JWT foundation. Stage 4D adds capability-driven edit/status controls and real user assignment. Stage 4E adds authenticated plain-text comments below Activity; its checkpoint is completed and verified.
+React 19, TypeScript, Vite, Tailwind, and React Router provide the responsive work item client. Stage 4C adds authentication on top of the reviewed backend Identity/JWT foundation. Stage 4D adds capability-driven edit/status controls and real user assignment. Stage 4E adds authenticated plain-text comments below Activity. Phase 4 passes 204 frontend tests and final local quality gates; Stage 4G adds 34 fresh real-API desktop/mobile/keyboard checks with no unexpected runtime/console errors. [Phase 4](../docs/phases/phase-4-auth-collaboration-qa.md) records acceptance and delivery status.
 
 ## Run and verify
 

@@ -48,9 +48,9 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 
 **Phase exit:** full create -> triage -> assign -> progress -> resolve workflow works through the UI and API.
 
-## Phase 4 — Authentication, Collaboration & QA (In Progress)
+## Phase 4 — Authentication, Collaboration & QA (Implemented & Locally Verified)
 
-The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication, and Stage 4C was subsequently reviewed. Stage 4D's capability-driven assignment/edit/status controls were approved before Stage 4E. Stage 4E comments are completed and verified, including 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks. Stage 4F is completed and verified with 49 authenticated collection requests/123 equivalent API assertions, 28 manual case definitions, six historical defect reports, traceability, and final 110 unit/135 PostgreSQL/204 frontend tests. Stage 4G has not started. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
+The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication, and Stage 4C was subsequently reviewed. Stage 4D's capability-driven assignment/edit/status controls were approved before Stage 4E. Stage 4E comments are completed and verified, including 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks. Stage 4F is completed and verified with 49 authenticated collection requests/123 equivalent API assertions, 28 manual case definitions, six historical defect reports, traceability, and final 110 unit/135 PostgreSQL/204 frontend tests. Stage 4G local gates pass with 110 unit/135 PostgreSQL/204 frontend tests, a fresh 49-request/123-assertion equivalent collection run, and 34 real Chromium desktop/mobile/keyboard checks. PR/CI/review delivery is in progress. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
 
 The final Stage 4C preflight also tightened the existing legacy boundary: an item with both creator and user assignee IDs null permits only Admin lifecycle edits, status changes, and assignment, until an Admin legitimately assigns a user. This focused backend correction adds regression coverage without beginning Stage 4D UI work.
 
