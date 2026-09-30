@@ -9,9 +9,9 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
 - **Phase 3 — Work Item Lifecycle (Completed & Verified)**
-- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4C incremental checkpoint)**
+- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4D completed and verified)**
 
-The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C now adds the authenticated React shell, login/register, protected routes, and session handling. User assignment controls, comments, and expanded QA artifacts remain pending; the Postman collection still needs its Phase 4 auth update. Stage 4D work is deferred beyond this incremental checkpoint.
+The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C adds the authenticated React shell, login/register, protected routes, and session handling. Stage 4D implements real user assignment and permission-aware work item controls using server capabilities; its automated and real-identity browser checks pass. Comments and expanded QA artifacts remain pending, and the Postman collection still needs its Phase 4 auth update. Stage 4E has not started.
 
 ### Tech Stack Summary
 
@@ -133,7 +133,7 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Dashboard placeholder, settings/system status page, and not-found page
 - [x] Frontend CI workflow (ESLint, Prettier, Vitest, TypeScript compilation, Vite build)
 
-### Phase 4 Stages 4A–4C
+### Phase 4 Stages 4A–4D
 - [x] ASP.NET Core Identity in the existing PostgreSQL database, JWT register/login/me, and authenticated user directory
 - [x] Admin/Member roles and server-side creator/assignee authorization
 - [x] User-backed ownership and assignment, preserved legacy assignment snapshots, and authenticated activity actors
@@ -141,14 +141,15 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Context/hooks auth state, real login/register, protected routes, current-user header, and logout
 - [x] SessionStorage token/expiry restoration through authoritative `/auth/me`, with retryable loading failures
 - [x] Central bearer headers restricted to the same-origin API, guarded `401` invalidation, and session-preserving `403` errors
-- [x] Work item create/detail compatibility, read-only assignment, and actor display names
+- [x] Work item create/detail compatibility and actor display names
+- [x] Capability-driven edit/status controls and user-backed assignment with preserved server versions
+- [x] Lazy active-user selection for Admin assignment, permitted Member self-assignment/unassignment, and clearly labelled historical names
 
 Legacy work items with both creator and user assignee IDs null require Admin for every work item mutation, including assignment. A Member gains assignee rights only after an Admin legitimately assigns that item; historical display-name text never grants permission. Stage 4C's final preflight tightened this boundary without adding assignment UI.
 
-See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, auth session model, verification evidence, and remaining work.
+Stage 4D is completed and verified: 166 frontend tests, 82 backend unit tests, 102 PostgreSQL integration cases, and 23 real-identity browser checks pass. Formatting, lint, and builds pass. See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, auth session model, assignment flows, historical verification evidence, and remaining work.
 
 ### Planned (Remaining Phase 4 and Future Phases)
-- [ ] Permission-aware user assignment controls and collaboration UI (Stage 4D)
 - [ ] Work item comments, expanded Postman workflows, manual QA, bug reports, and traceability (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
@@ -221,7 +222,7 @@ The web application will be running at `http://localhost:5173`.
 All requests to `/api/v1` are automatically proxied to the backend on `http://localhost:5055`.
 The frontend uses `/api/v1` by default. To set it explicitly, copy `.env.example` to `.env` inside `frontend/`; keep `/api/v1` as the value for local development so requests continue through the Vite proxy.
 
-Open `/register` to create a Member account or `/login` to sign in. Successful authentication returns to a validated requested application route; otherwise it opens `/work-items`. The current user and logout appear in the header. Reloading restores token/expiry metadata from sessionStorage and validates the user through `/auth/me`; a connection failure offers retry or sign out without silently discarding the token. Assignment is currently read-only, with legacy names labelled historical. See [frontend setup and session behavior](frontend/README.md); Postman auth expansion remains pending.
+Open `/register` to create a Member account or `/login` to sign in. Successful authentication returns to a validated requested application route; otherwise it opens `/work-items`. The current user and logout appear in the header. Reloading restores token/expiry metadata from sessionStorage and validates the user through `/auth/me`; a connection failure offers retry or sign out without silently discarding the token. Work item controls use server permission flags: Admin can open Change assignment to select an active user, while permitted Members receive Assign to me or Unassign me. Current assignee names take precedence over labelled historical snapshots. Create remains unassigned. See [frontend setup and session behavior](frontend/README.md); Postman auth expansion remains pending.
 
 ### 5. Frontend Scripts
 
@@ -289,7 +290,7 @@ flowops/
 │       ├── phase-1-backend-foundation.md # Phase 1 documentation
 │       ├── phase-2-frontend-foundation.md # Phase 2 documentation
 │       ├── phase-3-work-item-lifecycle.md # Phase 3 implementation and verification
-│       └── phase-4-auth-collaboration-qa.md # Backend foundation and Stage 4C checkpoint
+│       └── phase-4-auth-collaboration-qa.md # Backend foundation and frontend checkpoints
 ├── docker-compose.yml               # Hardened local PostgreSQL container configuration
 ├── .env.example                     # Local development environment template
 ├── CONTRIBUTING.md

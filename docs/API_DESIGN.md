@@ -124,6 +124,10 @@ Assign using an active user's ID, or unassign by sending a null `assigneeUserId`
 { "assigneeUserId": null, "expectedVersion": 1 }
 ```
 
+Stage 4D's client sends this exact assignment body, never display names or creator IDs. A directory-capable caller lazily opens Change assignment to select an active `{ id, displayName }` user; permitted self-assignment sends the verified current user's ID, and unassignment sends null. Creation remains unassigned with `assigneeUserId: null`. Server capabilities drive visible edit/status/assignment controls, and missing/null capabilities fail closed. Successful mutations replace the current item using the returned version and capabilities; subsequent calls use that server version. Edit/status/assignment are serialized within the detail page.
+
+The shared detail/list display shows a current assignee's real name first, Assigned user unavailable when an assignment ID has no summary, Historical assignment: NAME when only legacy text remains, and Unassigned otherwise. The existing name filter matches current user display names or the historical snapshot when no user is assigned. Compatibility `assigneeName` never supplies identity or permissions.
+
 ### Lifecycle rules
 
 | Current status | Allowed next statuses |
@@ -149,4 +153,4 @@ Create, title, description, priority, category, status, and assignment changes p
 
 ## Scope deferred to later phases
 
-The reviewed Stage 4A/4B backend foundation is now used by Stage 4C's authenticated React client: real login/registration, authoritative `/auth/me` restoration, protected routes, and a centralized bearer client are implemented. Client route/session guards provide UX; the backend remains authoritative for authentication and every operation's permissions. The client preserves authentication on `403`, creates items with `assigneeUserId: null`, and displays assignment read-only. User-backed assignment controls and permission-aware mutation UX remain Stage 4D work. Comment persistence/API, expanded authenticated Postman workflows, and remaining manual QA/traceability artifacts are pending later Phase 4 stages. The Postman collection still represents the Phase 3 unauthenticated workflow. Dashboard summaries belong to Phase 5.
+The reviewed Stage 4A/4B backend foundation is used by Stage 4C's authenticated React client and Stage 4D's capability-driven assignment/edit/status controls. Client route/session guards provide UX; the backend remains authoritative for authentication and every operation's permissions. Mutation `403` preserves authentication and current item state, with a visible permission error and no automatic refresh. A stale `409` requires manual refresh/review and never retries automatically. Protected `401` retains the centralized matching-session invalidation behavior. Stage 4D is completed and verified. Comment persistence/API, expanded authenticated Postman workflows, and remaining manual QA/traceability artifacts are pending later Phase 4 stages. The Postman collection still represents the Phase 3 unauthenticated workflow. Dashboard summaries belong to Phase 5.

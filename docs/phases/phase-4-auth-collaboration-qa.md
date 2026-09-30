@@ -1,10 +1,10 @@
 # Phase 4 — Authentication, Collaboration & QA
 
-## Incremental checkpoint: Stages 4A–4C
+## Incremental checkpoint: Stages 4A–4D
 
-Phase 3 is completed and verified; its merged history and phase document remain intact. Phase 4 is in progress. The backend Stage 4A/4B checkpoint was reviewed before Stage 4C began. The current incremental checkpoint adds React authentication and the minimum work item compatibility needed to use the protected API; Stage 4D and later work remain deferred.
+Phase 3 is completed and verified; its merged history and phase document remain intact. Phase 4 is in progress. The backend Stage 4A/4B checkpoint was reviewed before Stage 4C began, and Stage 4C was reviewed before Stage 4D. The current implementation adds real user assignment and capability-driven edit/status controls on the existing authenticated client. Stage 4D is completed and verified; Stage 4E comments have not started.
 
-The React client now supports real login/registration, protected routes, current-user identity, logout, and centralized bearer tokens. Assignment remains read-only until Stage 4D; comments, expanded Postman flows, manual QA artifacts, representative bug reports, and remaining traceability are pending. The Postman collection remains the Phase 3 workflow. No Phase 5 dashboard capability has been added.
+The React client supports real login/registration, protected routes, current-user identity, logout, centralized bearer tokens, user-backed assignment, and permission-aware work item actions. Comments, expanded Postman flows, manual QA artifacts, representative bug reports, and remaining traceability are pending. The Postman collection remains the Phase 3 workflow. No Phase 5 dashboard capability has been added.
 
 ## Identity architecture
 
@@ -69,7 +69,7 @@ No migration matches display names to users. New assignments use only `AssigneeU
 - compatibility `assigneeName`, preferring a current user display name and otherwise returning the historical snapshot;
 - server-computed `permissions`: `canEdit`, `canChangeStatus`, `canAssign`, `canSelfAssign`, `canUnassign`, and `canAssignOthers`.
 
-After removing a user assignment, the compatibility display may again show a legacy snapshot. Stage 4C detail displays the current user assignee separately from the historical snapshot, without assignment controls. Current assignment and permission decisions use user IDs, never the compatibility text. Response permission flags are UX hints; the backend rechecks every request. Permission-aware mutation controls remain Stage 4D work.
+After removing a user assignment, the compatibility field may again contain a legacy snapshot. Stage 4C introduced read-only current/historical presentation. Stage 4D uses a shared detail/table/card display: real name when a current assignment ID exists, Assigned user unavailable if that ID has no summary, a labelled Historical assignment: NAME fallback only without a current ID, and Unassigned otherwise. Current assignment and permission decisions use user IDs, never compatibility text. Response permission flags drive the controls as UX hints; the backend rechecks every request.
 
 ## Activity and concurrency
 
@@ -120,9 +120,23 @@ The central API client owns bearer headers. It attaches a session token only wit
 
 A protected `401` invalidates only when that request carried the current token and its captured session revision still matches. Late failures cannot erase a newer login, and concurrent failures invalidate once. Provider guards also prevent late `/me` responses or completed sign-in attempts from restoring a signed-out session. A `403` preserves authentication and shows a permission message rather than retrying or logging out.
 
-Existing work item edit/status requests retain expectedVersion propagation and stale-route guards. Create sends `assigneeUserId: null`; unsupported free-text assignment fields are removed. Detail shows the current user assignment and any separately labelled historical name read-only, and activity shows `actorDisplayName` with `System` for legacy events. User pickers, self-assignment controls, broader permission-aware controls, and comments are deferred.
+At the Stage 4C checkpoint, work item edit/status requests retained expectedVersion propagation and stale-route guards. Create sent `assigneeUserId: null`; unsupported free-text assignment fields were removed. Detail displayed current/historical assignment read-only, and activity displayed `actorDisplayName` with `System` for legacy events. Stage 4D now adds the assignment and permission controls described below; comments remain deferred.
 
 SessionStorage is accessible to JavaScript, so XSS can read the token. Phase 4 has no refresh token, revocation service, or client idle-expiry timer. Expiry metadata is stored, while API `401` responses and reload-time `/me` checks establish validity authoritatively. A production deployment may move toward secure server-managed/httpOnly sessions. Frontend setup and validation commands are in [frontend/README.md](../../frontend/README.md).
+
+## Stage 4D assignment and permission-aware controls
+
+Work item responses' `canEdit`, `canChangeStatus`, `canAssign`, `canSelfAssign`, `canUnassign`, and `canAssignOthers` capabilities drive visible actions. Missing/null permissions fail closed. The frontend does not reconstruct the authorization matrix through role checks or names. Edit details requires `canEdit`; status transition actions require `canChangeStatus`. The backend remains authoritative when controls are hidden or capabilities become stale.
+
+The Admin assignment flow is selected by `canAssign` plus `canAssignOthers`. Change assignment lazily calls the typed `usersApi.list()` method for `/users`, which returns active `{ id, displayName }` summaries through the central protected client. An accessible Assign to select and Save assignment submit the selected user ID. Unassign is separate and sends null when permitted. Loading is announced, an empty directory is explained, and directory failure offers an isolated retry without breaking detail. Members and callers without directory capability never fetch it. Route-scoped effect cleanup suppresses late directory responses after navigation.
+
+Members see Assign to me only when `canAssign` and `canSelfAssign` allow it; the target is the verified current auth user's ID. Unassign me sends null when `canAssign` and `canUnassign` allow it. Members have no directory picker. Legacy records with both creator and assignee user IDs null receive no Member assignment control; an Admin can establish a real assignment. Historical text never grants rights.
+
+Create remains unassigned, submitting no creator ID and `assigneeUserId: null`. Existing assignment requests send `{ assigneeUserId, expectedVersion: item.version }`. Successful responses replace the item, including returned version and capabilities, for later edits/status/assignment. A synchronous shared detail-page mutation gate serializes these operations and blocks rapid duplicate submissions. Existing item/route guards prevent an old mutation response from overwriting a newly navigated item; versions are never incremented manually.
+
+A mutation `403` keeps authentication and the current item, displays a permission error, and does not automatically refresh away the error. A stale `409` shows refresh/review guidance without automatic retry. Protected `401` uses the existing centralized matching-token/revision invalidation path. Backend resource → authorization → expectedVersion → mutation/activity/save ordering is unchanged; a forbidden stale request remains forbidden.
+
+Detail, desktop table, and mobile cards share real-first assignment presentation. The name filter continues to match current user display names or a legacy snapshot only while no user is assigned, with copy explaining those semantics. Activity retains server-resolved actor names. This stage adds no backend authorization changes, comments, user management, invitations, or teams.
 
 ## Verification evidence
 
@@ -130,9 +144,9 @@ Stage 4A verification passed 52 unit tests and 53 PostgreSQL integration cases b
 
 The initial Stage 4C preflight reran the 80 backend unit tests and 100 PostgreSQL integration cases successfully. A final literal re-audit found that the legacy Admin-only rule had been applied to edit/status while still permitting Member self-assignment. The focused correction now denies Member assignment as well whenever both creator and user assignee IDs are null, and aligns capability flags with that rule. Unit and real PostgreSQL regression checks cover the corrected boundary, including denial before mutation/activity/save for both current and stale versions, ordinary assignee rights after an Admin assignment, and restored Admin-only permissions after unassignment. Final verification passed restore, whole-solution formatting, full build with zero warnings/errors, all 82 unit tests, and all 102 PostgreSQL integration cases (26 authentication, 27 retained lifecycle, 48 authorization, and one migration case). The Stage 4A/4B counts above remain the recorded historical checkpoint evidence.
 
-The frontend suite passes 115 tests across nine files: 30 work item cases (27 retained baseline cases plus three compatibility cases), 30 session/client/provider cases, and 55 auth UI/route/return-path cases. Formatting, lint with zero warnings/errors, and production build pass. This backend correction adds no frontend controls or Stage 4D capability.
+At the historical Stage 4C checkpoint, the frontend suite passed 115 tests across nine files: 30 work item cases (27 retained baseline cases plus three compatibility cases), 30 session/client/provider cases, and 55 auth UI/route/return-path cases. Formatting, lint with zero warnings/errors, and production build passed. The Stage 4C backend correction added no frontend controls or Stage 4D capability.
 
-Rendered-browser QA passed 17 checks in Chromium 151.0.7922.34 at 1440 × 1000 desktop and 390 × 844 mobile sizes, using `http://localhost:5173`, the real API on port 5055, and a disposable PostgreSQL database with Member accounts. The Browser plugin was unavailable, so QA used the existing bundled Playwright/Chromium fallback without installing repository dependencies.
+Stage 4C rendered-browser QA passed 17 checks in Chromium 151.0.7922.34 at 1440 × 1000 desktop and 390 × 844 mobile sizes, using `http://localhost:5173`, the real API on port 5055, and a disposable PostgreSQL database with Member accounts. The Browser plugin was unavailable, so QA used the existing bundled Playwright/Chromium fallback without installing repository dependencies.
 
 The checks covered real registration/login/logout, intended routes with query/hash, authoritative `/me` restoration, work item list/create/read-only detail, current-user header, generic wrong-password failure, real unrelated-Member status `403` with the session preserved, and invalid-session `/me` clearing authentication. An intercepted `/me` `503` blocked protected content while retaining the token, then Try again restored the session through the real backend. Request checks observed bearer presence for `/me` and absence for login/public health without saving raw headers or token values.
 
@@ -145,6 +159,26 @@ Backend CI retains restore, format, build, unit tests, and PostgreSQL integratio
 A repository security review scanned 172 text files and found no new committed secrets. Existing disposable local database defaults remain unchanged, while auth test configuration uses clearly fake keys/passwords confined to tests. The review also checked registration role escalation, current-user/role trust, backend authorization, generic login errors, safe response DTOs, and credential/token logging. Signing keys and admin credentials remain private configuration.
 
 The Stage 4C security review inspected 62 source/build files, including three generated distribution files, and reported no findings. No signing keys, credentials, or raw bearer values were introduced into frontend source or build output.
+
+### Stage 4D automated verification
+
+Stage 4D passes all 166 frontend tests across 12 files, adding 51 cases over the 115-test Stage 4C checkpoint. Tests cover capability-driven controls, Admin and Member assignment flows, lazy directory loading/empty/error/retry, accessible selection, current/historical assignment rendering, server version propagation, serialized mutations, `403`/`409` behavior, and late assignment/directory responses after navigation. Existing auth/session and lifecycle tests remain green. Preflight `npm ci` reported zero audit vulnerabilities; Prettier, ESLint with zero warnings/errors, and TypeScript/Vite production build pass.
+
+The unchanged backend passes all 82 unit tests and 102 real PostgreSQL integration cases with zero failures/skips. Restore, whole-solution formatting verification, and build pass with zero warnings/errors. Stage 4D introduces no backend authorization changes. All Stage 4D exit gates pass; Stage 4E has not started.
+
+### Stage 4D rendered-browser verification
+
+Twenty-three checks pass in Chromium 151.0.7922.34 at 1440 × 1000 desktop and 390 × 844 mobile sizes against the real API and an isolated PostgreSQL database. An ephemeral Development-only Admin and two independently registered Members exercised creation, creator/assignee edit and status, eligible self-assignment, self-unassignment, Admin assignment/reassignment/unassignment, and hidden unrelated-Member controls. The API was restarted after bootstrap without seed credentials. No passwords or bearer values are retained in the evidence.
+
+A forbidden stale UI assignment returned `403` before version checking, retained authentication and local state, and stayed visible without an automatic refresh. A deliberately invoked Member request targeting another user also returned `403`. An authorized stale assignment returned `409` with manual refresh guidance, and explicit refresh enabled a safe retry. A real assignment `401` exercised the unchanged central matching-session invalidation path and returned cleanly to login. Successful responses supplied the versions used by later mutations.
+
+Legacy null/null records showed labelled historical text and no Member mutation controls. Admin assignment established ordinary assignee rights; Member self-unassignment restored the historical display and strict legacy boundary. Members made zero directory requests, while Admin loaded safe `{ id, displayName }` summaries only after opening the picker. A deliberately intercepted directory `503` remained local to the assignment card, and explicit retry used the real API successfully. Empty/loading/late directory cases are additionally covered by component tests.
+
+Desktop table and mobile cards showed current real names and clearly labelled historical names; both filter semantics were verified against the real backend. The mobile native select worked through keyboard selection, Tab, and Enter; unassignment also worked by keyboard. Long unbroken historical text wrapped without mobile overflow, and the desktop assignee column stays bounded. Assignment labels, accessible button names, disabled actions, and absence of nested interactive controls were checked. Mobile navigation retained Escape/focus restoration.
+
+Browser QA found an edit-dialog focus defect: its autofocus field could prevent returning focus to Edit details after Escape. The Modal now accepts an explicit trigger reference, and detail uses a stable close callback. A successful edit waits for its activity refresh before closing alongside the mutation unlock, so its trigger is enabled when focus returns. Three regressions cover Escape/focus trapping, activity completing while the dialog is open, and successful save with a delayed activity response. Real mobile Escape and desktop save focus checks pass.
+
+The Browser plugin was unavailable, so these checks used the existing bundled Playwright/Chromium fallback without adding repository dependencies. Four final screenshots (desktop assignment/list and mobile assignment/historical detail) were inspected. There are zero unexpected runtime or console errors; expected negative-case `401`, `403`, `409`, and intercepted `503` resource diagnostics were excluded from that count. This local Chromium verification does not claim cross-browser coverage or later-stage Postman/manual QA artifacts.
 
 ### Backend requirement traceability
 
@@ -175,8 +209,21 @@ These existing automated tests map the backend checkpoint requirements. Manual Q
 | Real credential form requests and accessible failure states | `AuthPages.test.tsx`: validation, field focus, generic failure, retry, duplicate-submit guards, and trusted register fields | Pending Stage 4F |
 | Work item compatibility preserves concurrency/navigation | Work item form/detail/list tests: create user-ID contract, read-only historical assignment, actor names, permission errors, expectedVersion, and late-route responses | Pending Stage 4F |
 
+### Stage 4D frontend requirement traceability
+
+| Requirement | Automated coverage | Manual QA / Postman |
+|---|---|---|
+| Server capabilities drive edit/status/assignment; null permissions fail closed | `WorkItemDetailPage.test.tsx` permission cases; `WorkItemAssignment.test.tsx` denied/null capabilities and capability-permitted selection despite a Member-labelled session | Pending Stage 4F |
+| Lazy safe directory and isolated loading/empty/error/retry states | `users.test.ts` protected safe-summary contract; `WorkItemAssignment.test.tsx` lazy opening, accessible select, directory states, and retry | Pending Stage 4F |
+| Permitted Member self-assignment/unassignment uses verified identity without directory access | `WorkItemAssignment.test.tsx` authenticated-ID self-assignment, self-unassignment, and unavailable trusted user ID | Pending Stage 4F |
+| Legacy names are clearly historical and grant no rights | `WorkItemAssignee.test.tsx` table/card real-first, historical, unavailable-summary, and unassigned rendering; detail/assignment legacy-name permission tests | Pending Stage 4F |
+| Returned server versions propagate to subsequent mutations | `WorkItemDetailPage.test.tsx`: self-assignment version 8 to status, Admin reassignment version 9 to edit, and unassignment response propagation | Pending Stage 4F |
+| `403` retains session/item/error; `409` requires explicit refresh | Assignment/detail forbidden/conflict tests; central client `401`/`403` regressions retained | Pending Stage 4F |
+| Rapid mutations serialize and late route responses cannot contaminate another item | Assignment pending/route tests and detail assignment/status serialization, late assignment, and late directory tests | Pending Stage 4F |
+| Assignee filter retains current/historical backend semantics | `WorkItemsPage.test.tsx` accessible hint, query propagation, and page reset | Pending Stage 4F |
+
 ## Later-stage decisions and limitations
 
-Stage 4D will add real user selection/self-assignment and server-computed permission hints while retaining expectedVersion. Stage 4E will add persisted comments, authenticated authors, comment activity, and UI; the intended atomic comment/activity write will not increment the work item version for a comment alone. Stages 4F/4G will add authenticated/negative Postman flows, focused manual QA cases, real historical development bug reports, remaining requirement traceability, final browser QA/documentation, CI verification, and PR delivery.
+Stage 4D is completed and verified. Work stops at this checkpoint, ready for Stage 4E review and authorization. Stage 4E will add persisted comments, authenticated authors, comment activity, and UI; the intended atomic comment/activity write will not increment the work item version for a comment alone. Stages 4F/4G will add authenticated/negative Postman flows, focused manual QA cases, real historical development bug reports, remaining requirement traceability, final browser QA/documentation, CI verification, and PR delivery.
 
-No comments, real-time features, notifications, reactions, mentions, rich text, profile editing, dashboard aggregation, or later-phase infrastructure are included in the checkpoint. Phase 4 remains in progress; this incremental delivery concludes Stage 4C without beginning Stage 4D.
+No comments, real-time features, notifications, reactions, mentions, rich text, profile editing, dashboard aggregation, or later-phase infrastructure are included in the checkpoint. Phase 4 remains in progress; Stage 4E has not begun and no PR is opened by this stage.

@@ -50,7 +50,7 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 
 ## Phase 4 — Authentication, Collaboration & QA (In Progress)
 
-The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication. Stage 4C is implemented and verified at the current incremental checkpoint; Stage 4D assignment controls and later collaboration work remain deferred. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
+The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication, and Stage 4C was subsequently reviewed. Stage 4D's capability-driven assignment/edit/status controls are completed and verified, including 166 frontend tests, 82 backend unit tests, 102 PostgreSQL integration cases, and 23 real-identity browser checks. Stage 4E comments have not started. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
 
 The final Stage 4C preflight also tightened the existing legacy boundary: an item with both creator and user assignee IDs null permits only Admin work item mutations, including assignment, until an Admin legitimately assigns a user. This focused backend correction adds regression coverage without beginning Stage 4D UI work.
 
@@ -58,7 +58,7 @@ The final Stage 4C preflight also tightened the existing legacy boundary: an ite
 2. [x] `feat(authz): add user-backed ownership/assignment and enforce role/ownership rules without weakening concurrency` (Stage 4B)
 3. [x] `test(api): verify authentication/authorization boundaries and additive migration compatibility` (Stage 4A/4B)
 4. [x] `feat(web): add auth state, login/register, protected routes, token-aware client, and logout` (Stage 4C)
-5. [ ] `feat(web): add permission-aware user assignment controls and regression tests` (Stage 4D)
+5. [x] `feat(web): add permission-aware user assignment controls and regression tests` (Stage 4D)
 6. [ ] `feat(comments): add persisted comments, authenticated actors, activity, UI, and tests` (Stage 4E)
 7. [ ] `test(api): expand remaining negative-path workflows and authenticated Postman requests` (Stage 4F)
 8. [x] `test(postman): publish baseline API collection and environment template` (delivered in Phase 3; Phase 4 auth expansion pending)
