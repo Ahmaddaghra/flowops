@@ -88,4 +88,4 @@ ApplicationUser 1 ─── 0..* Comment (author)
 
 ## Deferred scope
 
-Stage 4E includes no comment editing/deletion/replies or real-time collaboration. Expanded QA artifacts remain Stage 4F work, and dashboard data belongs to Phase 5.
+Stage 4E includes no comment editing/deletion/replies or real-time collaboration. Stage 4F QA artifacts document the existing schema/contracts; dashboard data belongs to Phase 5.

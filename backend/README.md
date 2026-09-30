@@ -75,4 +75,4 @@ Stage 4E passes all 110 unit tests and 133 PostgreSQL integration cases, adding 
 
 ## API
 
-The implemented contract is documented in [API Design](../docs/API_DESIGN.md), and the authorization and migration decisions are in the [Phase 4 checkpoint](../docs/phases/phase-4-auth-collaboration-qa.md). The existing `docs/postman/` collection/environment still represent the Phase 3 unauthenticated workflow; expanded authenticated Postman requests are pending later Phase 4 work.
+The implemented contract is documented in [API Design](../docs/API_DESIGN.md), and the authorization and migration decisions are in the [Phase 4 checkpoint](../docs/phases/phase-4-auth-collaboration-qa.md). Stage 4F expands `docs/postman/` with placeholder-only authenticated Admin/Member workflows and representative negative/conflict cases. The [Postman guide](../docs/qa/postman-guide.md) explains disposable setup and execution. Final totals are 110 unit and 135 PostgreSQL tests, with all backend gates green; negative-path auditing tightened assertions for expectedVersion-specific errors and added invalid-status API coverage without changing product behavior.

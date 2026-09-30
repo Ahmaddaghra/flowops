@@ -9,9 +9,9 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
 - **Phase 3 — Work Item Lifecycle (Completed & Verified)**
-- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4E completed and verified)**
+- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4F completed and verified)**
 
-The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C adds the authenticated React shell, login/register, protected routes, and session handling. Stage 4D implements real user assignment and permission-aware work item controls using server capabilities. Stage 4E adds persisted comments with authenticated authors, atomic activity recording, and responsive UI. Automated and real-identity browser checks pass. Expanded QA artifacts and the Postman auth update remain pending Stage 4F.
+The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C adds the authenticated React shell, login/register, protected routes, and session handling. Stage 4D implements real user assignment and permission-aware work item controls using server capabilities. Stage 4E adds persisted comments with authenticated authors, atomic activity recording, and responsive UI. Automated and real-identity browser checks pass. Stage 4F adds authenticated Postman workflows, a reproducible manual suite, six evidence-backed historical defect reports, and requirement traceability. Final Phase 4 delivery remains pending Stage 4G.
 
 ### Tech Stack Summary
 
@@ -149,13 +149,19 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 
 Legacy work items with both creator and user assignee IDs null require Admin for lifecycle edits, status changes, and assignment. A Member gains assignee rights only after an Admin legitimately assigns that item; historical display-name text never grants permission. Stage 4C's final preflight tightened this boundary without adding assignment UI. Comments follow the authenticated read boundary: any Admin or Member can comment on a readable item, including a legacy item, without changing its version or updated timestamp.
 
-Stage 4E is completed and verified: 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks pass. Formatting, lint, and builds pass. The approved Stage 4D baseline was 166/82/102 tests and 23 browser checks. See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for comments contracts, authorization, additive migrations, concurrency, historical evidence, and remaining work. Comment editing, deletion, and replies are outside this stage.
+The approved Stage 4E checkpoint passed 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks pass. Formatting, lint, and builds pass. The approved Stage 4D baseline was 166/82/102 tests and 23 browser checks. See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for comments contracts, authorization, additive migrations, concurrency, historical evidence, and remaining work. Comment editing, deletion, and replies are outside this stage.
 
 ### Planned (Remaining Phase 4 and Future Phases)
-- [ ] Expanded Postman workflows, manual QA, bug reports, and traceability (Phase 4)
+- [ ] Final Phase 4 documentation, CI review, and approved delivery (Stage 4G)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
 ---
+
+## QA and testing
+
+Stage 4F passes 110 backend unit tests, 135 real PostgreSQL integration cases, and 204 frontend tests, with format/lint/build gates green. The [authenticated Postman guide](docs/qa/postman-guide.md) covers eight folders and 49 requests. Official v2.1 schema validation and equivalent API execution pass all 123 named assertions; no native Postman/Newman runner was installed, and desktop GUI import was not performed.
+
+The [28-case manual suite](docs/qa/manual-test-cases.md), [six resolved development defects](docs/qa/bug-reports.md), and [traceability matrix](docs/qa/traceability.md) connect the important business rules to automated/API/UI evidence. Manual case definitions are reproducible and clearly distinguish prior browser evidence from fresh manual execution. QA uses disposable data and placeholder-only committed environments. Stage 4G and Phase 5 have not started.
 
 ## Local Setup & Quick Start
 
@@ -224,7 +230,7 @@ The web application will be running at `http://localhost:5173`.
 All requests to `/api/v1` are automatically proxied to the backend on `http://localhost:5055`.
 The frontend uses `/api/v1` by default. To set it explicitly, copy `.env.example` to `.env` inside `frontend/`; keep `/api/v1` as the value for local development so requests continue through the Vite proxy.
 
-Open `/register` to create a Member account or `/login` to sign in. Successful authentication returns to a validated requested application route; otherwise it opens `/work-items`. The current user and logout appear in the header. Reloading restores token/expiry metadata from sessionStorage and validates the user through `/auth/me`; a connection failure offers retry or sign out without silently discarding the token. Work item controls use server permission flags: Admin can open Change assignment to select an active user, while permitted Members receive Assign to me or Unassign me. Current assignee names take precedence over labelled historical snapshots. Create remains unassigned. See [frontend setup and session behavior](frontend/README.md); Postman auth expansion remains pending.
+Open `/register` to create a Member account or `/login` to sign in. Successful authentication returns to a validated requested application route; otherwise it opens `/work-items`. The current user and logout appear in the header. Reloading restores token/expiry metadata from sessionStorage and validates the user through `/auth/me`; a connection failure offers retry or sign out without silently discarding the token. Work item controls use server permission flags: Admin can open Change assignment to select an active user, while permitted Members receive Assign to me or Unassign me. Current assignee names take precedence over labelled historical snapshots. Create remains unassigned. See [frontend setup and session behavior](frontend/README.md); See the [Postman QA guide](docs/qa/postman-guide.md) for authenticated API verification.
 
 ### 5. Frontend Scripts
 

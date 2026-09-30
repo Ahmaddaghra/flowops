@@ -1,10 +1,10 @@
 # Phase 4 — Authentication, Collaboration & QA
 
-## Incremental checkpoint: Stages 4A–4E
+## Incremental checkpoint: Stages 4A–4F
 
-Phase 3 is completed and verified; its merged history and phase document remain intact. Phase 4 is in progress. The backend Stage 4A/4B checkpoint was reviewed before Stage 4C began, and Stage 4C was reviewed before Stage 4D. Stage 4D was approved before Stage 4E began. The current implementation adds persisted authenticated comments, atomic comment/activity writes, and a responsive Comments UI on that approved foundation. Stage 4E is completed and verified; Stage 4F has not started.
+Phase 3 is completed and verified; its merged history and phase document remain intact. Phase 4 is in progress. The backend Stage 4A/4B checkpoint was reviewed before Stage 4C began, and Stage 4C was reviewed before Stage 4D. Stage 4D was approved before Stage 4E began. The current implementation adds persisted authenticated comments, atomic comment/activity writes, and a responsive Comments UI on that approved foundation. Stage 4E was approved before Stage 4F. Stage 4F QA depth is now completed and verified; Stage 4G has not started.
 
-The React client supports real login/registration, protected routes, current-user identity, logout, centralized bearer tokens, user-backed assignment, permission-aware work item actions, and comments. Expanded Postman flows, manual QA artifacts, representative bug reports, and remaining traceability are pending Stage 4F. The Postman collection remains the Phase 3 workflow. No Phase 5 dashboard capability has been added.
+The React client supports real login/registration, protected routes, current-user identity, logout, centralized bearer tokens, user-backed assignment, permission-aware work item actions, and comments. Stage 4F adds authenticated Postman flows, manual case definitions, six resolved historical bug reports, and a requirement traceability matrix. The collection follows the current Stages 4A–4E contracts and uses placeholders only. No Phase 5 dashboard capability has been added.
 
 ## Identity architecture
 
@@ -111,7 +111,7 @@ Rolling down the ownership migration removes new ownership/assignment references
 | `GET` | `/api/v1/work-items/{id}/activity` | Authenticated |
 | `GET`, `POST` | `/api/v1/work-items/{id}/comments` | Authenticated Admin/Member; follows work item read boundary |
 
-The full contracts and examples are in [API Design](../API_DESIGN.md). Stage 4E includes comments GET/POST with strict body-only creation and safe author responses. The existing Postman collection/environment are preserved for the later Stage 4F auth workflow expansion; they contain no real credentials or tokens.
+The full contracts and examples are in [API Design](../API_DESIGN.md). Stage 4E includes comments GET/POST with strict body-only creation and safe author responses. Stage 4F expands the Postman collection/environment for authenticated verification; they contain no real credentials or tokens. Setup and execution are documented in [the QA guide](../qa/postman-guide.md).
 
 ## Stage 4C frontend authentication
 
@@ -215,50 +215,86 @@ An edit opened at version 1 stays open while Member B comments; the original edi
 
 Mobile checks verify no horizontal overflow or nested interactive controls, an accessible textarea, Tab/Enter comment submission, preserved multiline text, and existing navigation Escape/focus restoration. A Member can comment on a legacy unowned item while edit/status/assignment restrictions and version remain intact. Three screenshots were visually inspected. There are zero unexpected runtime or console errors; expected `400`/`401` and intercepted `403`/`503` resource diagnostics are identified separately. Passwords, signing keys, and bearer values are omitted from evidence. The existing bundled Playwright/Chromium fallback adds no repository dependency. These Stage 4E checks do not claim cross-browser coverage or delivery of Stage 4F Postman/manual QA artifacts.
 
+## Stage 4F QA strategy and evidence
+
+Stage 4F started from approved HEAD `57c1cbb`, with a clean correct branch and all 110 unit, 133 PostgreSQL, and 204 frontend baseline tests plus format/lint/build gates passing. The stage adds QA depth without product features or authorization/concurrency changes. Final gates pass **110 unit tests, 135 PostgreSQL integration cases, and 204 frontend tests**, with zero failures/skips and zero build/lint warnings/errors. `npm ci` reports zero audit vulnerabilities.
+
+### QA artifact locations and purpose
+
+| Artifact | Purpose |
+|---|---|
+| [Postman collection](../postman/FlowOps.postman_collection.json) and [placeholder environment](../postman/FlowOps.local.postman_environment.json) | Eight ordered folders and 49 authenticated API requests for two Members and Admin |
+| [Postman guide](../qa/postman-guide.md) | Disposable DB/API/identity setup, exact request order, variables, negative expectations, reset/rerun instructions |
+| [Manual test cases](../qa/manual-test-cases.md) | 28 reproducible cases across auth, permissions, work items, concurrency, comments, responsive layout, and keyboard use |
+| [Bug reports](../qa/bug-reports.md) | Six actual resolved local-development defects, with affected/fix revisions and retained regressions |
+| [Traceability](../qa/traceability.md) | Important business requirements mapped to unit, PostgreSQL, frontend, Postman, and manual evidence with explicit scope gaps |
+
+Automated tests verify domain/use-case rules, real database transactions/authorization, and deterministic UI races. Postman verifies the current HTTP workflow and representative failures directly. Manual cases provide reproducible UI/keyboard review steps; their status distinguishes designed cases and recorded prior Stage 4C/4D/4E browser evidence from a fresh manual execution. The suite is not presented as 28 newly executed manual cases. Historical bug reports explain actual engineering corrections rather than inventing incidents or claiming customer impact. The matrix maps business requirements instead of every code line and identifies database faults and client-route behavior that ordinary Postman requests cannot prove.
+
+### Authenticated Postman verification
+
+The collection is organized as Authentication, Users, Work Items, Assignment, Comments, Activity, Negative Authorization, and Concurrency / Conflict Cases. Public registration/login uses no bearer, normal requests use the Member token, and second-Member/Admin requests explicitly select their own captured token. Registration cannot select a role. Assignment uses real user IDs, creator/actor IDs stay server-owned, and comment POST sends body only.
+
+Successful WorkItem mutation scripts replace `workItemVersion` with the returned server version. Comments retain a separate `commentWorkItemVersion` baseline and prove both the variable and persisted version unchanged. The deterministic stale flow keeps `staleWorkItemVersion` separate, makes a title-only winning edit with N, asserts N+1, then verifies stale edit and authorized stale assignment both return 409 while the winner remains. Negative requests cover wrong password, anonymous/malformed authentication, unrelated Member edit/status, assigning another user, title/enum/comment/version validation, missing resources, and invalid transitions. Expected 400/401/403/404/409 responses are assertions of correct behavior.
+
+The collection and environment parse as JSON. The collection passes the [official Postman v2.1 draft-04 schema](https://schema.getpostman.com/json/collection/v2.1.0/collection.json); all 51 test/pre-request scripts parse, and 25 environment variables contain only placeholders, empty captured values, or non-secret fixture values. No Postman CLI, Newman, or postman-runtime runner was installed. An equivalent Node API executor used the actual collection request bodies, authentication overrides, pre-request hooks, and test scripts against the real .NET API and disposable PostgreSQL. **All 49 requests and 123 named assertions passed.** Independent executor checks also verified comment variables remained unchanged and successful mutations captured their returned version. No native Postman/Newman run or desktop GUI import is claimed.
+
+### Negative-test audit and focused improvements
+
+Existing PostgreSQL suites already cover malformed/expired/wrong-signature JWTs, anonymous protected routes, generic login failures, unrelated Member current/stale 403, prohibited assignment/reassignment/unassignment, legacy boundaries, invalid expectedVersion, stale lifecycle mutations, invalid transitions, comment validation/spoofing, atomic rollback, and version compatibility. These were retained rather than duplicated. The audit found that `InvalidExpectedVersion_ReturnsValidationProblem` sent unrelated fields to the strict assignment DTO; a 400 could therefore arise from unmapped properties. It now uses a valid route-specific payload and asserts an expectedVersion field error for all existing cases.
+
+Two focused PostgreSQL cases in `InvalidStatus_ReturnsFieldValidationProblem_WithoutMutationOrActivity` cover unknown and numeric-looking status strings through HTTP. Both return 400 with Status errors and preserve status/version/updated timestamp/activity. Domain invalid-enum tests alone did not prove that HTTP contract. Frontend negatives already adequately cover generic login failure, central 401, preserved 403, stale edits, assignment 403/409, comment failures/drafts, and comment route races, so no duplicate frontend tests were added. No new product defect required an implementation fix.
+
+### Secret inspection and disposable data
+
+Repository inspection covers current tracked content plus new QA artifacts, checking committed environments, JWT/key/token literals, authorization values, credentials, and database password examples without printing their values. Postman has `.invalid` email placeholders, `CHANGE_ME` passwords, empty tokens/user/resource/version slots, and obvious non-secret missing-resource fixture GUIDs; no populated current/initial secret values are committed. Existing disposable Docker/CI defaults and clearly fake test fixtures are classified separately from secrets. The final checkpoint records scan counts and limitations. No real secret finding remains.
+
+API QA creates ephemeral Members/Admin and a fresh signing key only in memory, against owned disposable data. Temporary servers and QA databases are cleaned up; the developer database remains untouched. Prior browser evidence remains the actual Stage 4C/4D/4E Chromium runs and is not relabelled as a fresh Stage 4F UI pass. Secret inspection is a pattern/context review of current tracked content, not a claim to scan every historical Git object or every possible secret format. Native Postman runtime/GUI import and cross-browser testing remain evidence limitations.
+
 ### Backend requirement traceability
 
-These existing automated tests map the backend checkpoint requirements. Manual QA case IDs and authenticated Postman request mappings remain pending Stage 4F; this checkpoint does not claim those artifacts are delivered.
+These historical automated references remain valid. Stage 4F assigns current manual/Postman coverage in the [QA matrix](../qa/traceability.md), with explicit limitations where a unit/database or frontend behavior has no ordinary API equivalent.
 
 | Requirement | Automated test | Manual QA / Postman |
 |---|---|---|
-| Registration creates Member and rejects role escalation | `AuthApiTests.Register_CreatesMember_WithSafeResponseAndExpectedJwtClaims`; `Register_RejectsRoleSpoof_WithoutCreatingAnAdmin` | Pending Stage 4F |
-| Generic login failures and JWT-protected current-user/directory | `AuthApiTests.Login_WrongPasswordAndUnknownAccount_HaveIdenticalGenericFailures`; `MeAndDirectory_RejectInvalidAuthentication` | Pending Stage 4F |
-| Anonymous work item requests return `401` | `AuthorizationApiTests.WorkItemRoutes_AnonymousRequests_ReturnUnauthorized` | Pending Stage 4F |
-| Admin/creator/assignee edit and status permissions | `WorkItemAuthorizationTests.Permissions_EditAndStatusFollowIdentity`; `AuthorizationApiTests.AuthorizedCreatorAssigneeAndAdmin_CanMutate_AndActivityUsesCaller` | Pending Stage 4F |
-| Exact self-assignment/Admin assignment policy | `WorkItemAuthorizationTests.Assignment_ExactRoleRules`; `AuthorizationApiTests.Member_CanSelfAssignAndSelfUnassign_WithoutOwningItem`; `Admin_CanAssignReassignAndUnassign_AnyActiveUser` | Pending Stage 4F |
-| Forbidden operations produce no mutation, activity, or save | `WorkItemAuthorizationTests.Forbidden_StopsBeforeVersionMutationActivityOrSave`; `AuthorizationApiTests.UnrelatedMember_IsForbiddenBeforeConcurrencyValidation_AndPersistsNoChanges` | Pending Stage 4F |
-| Legacy Member self-assignment is forbidden before current/stale version checks or writes | `WorkItemAuthorizationTests.Legacy_MemberSelfAssignmentIsForbiddenBeforeVersionValidationAndWrites`; `AuthorizationApiTests.Legacy_MemberSelfAssignmentReturnsForbiddenBeforeConcurrencyAndChangesNothing` | Pending Stage 4F |
-| Legacy names confer no ownership; Admin assignment enables ordinary rights and unassignment restores the boundary | `WorkItemAuthorizationTests.LegacyName_DoesNotGrantPermission_AndSurvivesUserAssignment`; `AuthorizationApiTests.LegacyName_GrantsNoOwnership_AdminAssignmentEnablesMemberMutation` | Pending Stage 4F |
-| Permitted stale requests preserve winning state and activity | `WorkItemServiceTests.StaleExpectedVersion_ConflictsBeforeMutationActivityOrSave`; `WorkItemsApiTests.StaleClientRepresentation_ReturnsConflictAndPreservesWinnerAndActivity` | Pending Stage 4F |
-| Additive up/down/up migration preserves Phase 3 item/activity fields | `MigrationCollaborationTests.Phase3ToLatest_DownAndUp_PreserveLegacyItemsActivityAndRoleDefinitions` | Pending Stage 4F |
+| Registration creates Member and rejects role escalation | `AuthApiTests.Register_CreatesMember_WithSafeResponseAndExpectedJwtClaims`; `Register_RejectsRoleSpoof_WithoutCreatingAnAdmin` | See [QA matrix](../qa/traceability.md) |
+| Generic login failures and JWT-protected current-user/directory | `AuthApiTests.Login_WrongPasswordAndUnknownAccount_HaveIdenticalGenericFailures`; `MeAndDirectory_RejectInvalidAuthentication` | See [QA matrix](../qa/traceability.md) |
+| Anonymous work item requests return `401` | `AuthorizationApiTests.WorkItemRoutes_AnonymousRequests_ReturnUnauthorized` | See [QA matrix](../qa/traceability.md) |
+| Admin/creator/assignee edit and status permissions | `WorkItemAuthorizationTests.Permissions_EditAndStatusFollowIdentity`; `AuthorizationApiTests.AuthorizedCreatorAssigneeAndAdmin_CanMutate_AndActivityUsesCaller` | See [QA matrix](../qa/traceability.md) |
+| Exact self-assignment/Admin assignment policy | `WorkItemAuthorizationTests.Assignment_ExactRoleRules`; `AuthorizationApiTests.Member_CanSelfAssignAndSelfUnassign_WithoutOwningItem`; `Admin_CanAssignReassignAndUnassign_AnyActiveUser` | See [QA matrix](../qa/traceability.md) |
+| Forbidden operations produce no mutation, activity, or save | `WorkItemAuthorizationTests.Forbidden_StopsBeforeVersionMutationActivityOrSave`; `AuthorizationApiTests.UnrelatedMember_IsForbiddenBeforeConcurrencyValidation_AndPersistsNoChanges` | See [QA matrix](../qa/traceability.md) |
+| Legacy Member self-assignment is forbidden before current/stale version checks or writes | `WorkItemAuthorizationTests.Legacy_MemberSelfAssignmentIsForbiddenBeforeVersionValidationAndWrites`; `AuthorizationApiTests.Legacy_MemberSelfAssignmentReturnsForbiddenBeforeConcurrencyAndChangesNothing` | See [QA matrix](../qa/traceability.md) |
+| Legacy names confer no ownership; Admin assignment enables ordinary rights and unassignment restores the boundary | `WorkItemAuthorizationTests.LegacyName_DoesNotGrantPermission_AndSurvivesUserAssignment`; `AuthorizationApiTests.LegacyName_GrantsNoOwnership_AdminAssignmentEnablesMemberMutation` | See [QA matrix](../qa/traceability.md) |
+| Permitted stale requests preserve winning state and activity | `WorkItemServiceTests.StaleExpectedVersion_ConflictsBeforeMutationActivityOrSave`; `WorkItemsApiTests.StaleClientRepresentation_ReturnsConflictAndPreservesWinnerAndActivity` | See [QA matrix](../qa/traceability.md) |
+| Additive up/down/up migration preserves Phase 3 item/activity fields | `MigrationCollaborationTests.Phase3ToLatest_DownAndUp_PreserveLegacyItemsActivityAndRoleDefinitions` | See [QA matrix](../qa/traceability.md) |
 
 ### Stage 4C frontend requirement traceability
 
 | Requirement | Automated coverage | Manual QA / Postman |
 |---|---|---|
-| Token/expiry persistence and logout | `authSession.test.ts`: minimum session data, restoration, storage failure, and logout | Pending Stage 4F |
-| Authoritative restored identity and recoverable bootstrap errors | `AuthProvider.test.tsx`: pending `/me`, invalid session `401`, retry after connection/server failures, and StrictMode replay | Pending Stage 4F |
-| Central bearer scope, public auth/health, and separate `401`/`403` handling | `client.test.ts`: trusted scope, no anonymous/public bearer, protected invalidation, and preserved forbidden session | Pending Stage 4F |
-| Stale/concurrent auth cannot erase or resurrect another session | `AuthProvider.test.tsx` and `client.test.ts`: late `/me`/login, old-session `401`, and concurrent protected failures | Pending Stage 4F |
-| Protected routes and safe intended destinations | `AuthRoutes.test.tsx` and `returnPath.test.ts`: anonymous/authenticated routes, query/hash, and invalid external paths | Pending Stage 4F |
-| Real credential form requests and accessible failure states | `AuthPages.test.tsx`: validation, field focus, generic failure, retry, duplicate-submit guards, and trusted register fields | Pending Stage 4F |
-| Work item compatibility preserves concurrency/navigation | Work item form/detail/list tests: create user-ID contract, read-only historical assignment, actor names, permission errors, expectedVersion, and late-route responses | Pending Stage 4F |
+| Token/expiry persistence and logout | `authSession.test.ts`: minimum session data, restoration, storage failure, and logout | See [QA matrix](../qa/traceability.md) |
+| Authoritative restored identity and recoverable bootstrap errors | `AuthProvider.test.tsx`: pending `/me`, invalid session `401`, retry after connection/server failures, and StrictMode replay | See [QA matrix](../qa/traceability.md) |
+| Central bearer scope, public auth/health, and separate `401`/`403` handling | `client.test.ts`: trusted scope, no anonymous/public bearer, protected invalidation, and preserved forbidden session | See [QA matrix](../qa/traceability.md) |
+| Stale/concurrent auth cannot erase or resurrect another session | `AuthProvider.test.tsx` and `client.test.ts`: late `/me`/login, old-session `401`, and concurrent protected failures | See [QA matrix](../qa/traceability.md) |
+| Protected routes and safe intended destinations | `AuthRoutes.test.tsx` and `returnPath.test.ts`: anonymous/authenticated routes, query/hash, and invalid external paths | See [QA matrix](../qa/traceability.md) |
+| Real credential form requests and accessible failure states | `AuthPages.test.tsx`: validation, field focus, generic failure, retry, duplicate-submit guards, and trusted register fields | See [QA matrix](../qa/traceability.md) |
+| Work item compatibility preserves concurrency/navigation | Work item form/detail/list tests: create user-ID contract, read-only historical assignment, actor names, permission errors, expectedVersion, and late-route responses | See [QA matrix](../qa/traceability.md) |
 
 ### Stage 4D frontend requirement traceability
 
 | Requirement | Automated coverage | Manual QA / Postman |
 |---|---|---|
-| Server capabilities drive edit/status/assignment; null permissions fail closed | `WorkItemDetailPage.test.tsx` permission cases; `WorkItemAssignment.test.tsx` denied/null capabilities and capability-permitted selection despite a Member-labelled session | Pending Stage 4F |
-| Lazy safe directory and isolated loading/empty/error/retry states | `users.test.ts` protected safe-summary contract; `WorkItemAssignment.test.tsx` lazy opening, accessible select, directory states, and retry | Pending Stage 4F |
-| Permitted Member self-assignment/unassignment uses verified identity without directory access | `WorkItemAssignment.test.tsx` authenticated-ID self-assignment, self-unassignment, and unavailable trusted user ID | Pending Stage 4F |
-| Legacy names are clearly historical and grant no rights | `WorkItemAssignee.test.tsx` table/card real-first, historical, unavailable-summary, and unassigned rendering; detail/assignment legacy-name permission tests | Pending Stage 4F |
-| Returned server versions propagate to subsequent mutations | `WorkItemDetailPage.test.tsx`: self-assignment version 8 to status, Admin reassignment version 9 to edit, and unassignment response propagation | Pending Stage 4F |
-| `403` retains session/item/error; `409` requires explicit refresh | Assignment/detail forbidden/conflict tests; central client `401`/`403` regressions retained | Pending Stage 4F |
-| Rapid mutations serialize and late route responses cannot contaminate another item | Assignment pending/route tests and detail assignment/status serialization, late assignment, and late directory tests | Pending Stage 4F |
-| Assignee filter retains current/historical backend semantics | `WorkItemsPage.test.tsx` accessible hint, query propagation, and page reset | Pending Stage 4F |
+| Server capabilities drive edit/status/assignment; null permissions fail closed | `WorkItemDetailPage.test.tsx` permission cases; `WorkItemAssignment.test.tsx` denied/null capabilities and capability-permitted selection despite a Member-labelled session | See [QA matrix](../qa/traceability.md) |
+| Lazy safe directory and isolated loading/empty/error/retry states | `users.test.ts` protected safe-summary contract; `WorkItemAssignment.test.tsx` lazy opening, accessible select, directory states, and retry | See [QA matrix](../qa/traceability.md) |
+| Permitted Member self-assignment/unassignment uses verified identity without directory access | `WorkItemAssignment.test.tsx` authenticated-ID self-assignment, self-unassignment, and unavailable trusted user ID | See [QA matrix](../qa/traceability.md) |
+| Legacy names are clearly historical and grant no rights | `WorkItemAssignee.test.tsx` table/card real-first, historical, unavailable-summary, and unassigned rendering; detail/assignment legacy-name permission tests | See [QA matrix](../qa/traceability.md) |
+| Returned server versions propagate to subsequent mutations | `WorkItemDetailPage.test.tsx`: self-assignment version 8 to status, Admin reassignment version 9 to edit, and unassignment response propagation | See [QA matrix](../qa/traceability.md) |
+| `403` retains session/item/error; `409` requires explicit refresh | Assignment/detail forbidden/conflict tests; central client `401`/`403` regressions retained | See [QA matrix](../qa/traceability.md) |
+| Rapid mutations serialize and late route responses cannot contaminate another item | Assignment pending/route tests and detail assignment/status serialization, late assignment, and late directory tests | See [QA matrix](../qa/traceability.md) |
+| Assignee filter retains current/historical backend semantics | `WorkItemsPage.test.tsx` accessible hint, query propagation, and page reset | See [QA matrix](../qa/traceability.md) |
 
 ## Later-stage decisions and limitations
 
-Stage 4E is completed and verified. Work stops at this checkpoint, ready for Stage 4F QA depth after review and authorization. Stages 4F/4G will add authenticated/negative Postman flows, focused manual QA cases, real historical development bug reports, remaining requirement traceability, final browser QA/documentation, CI verification, and PR delivery.
+Stage 4F is completed and verified. Work stops at this checkpoint, ready for Stage 4G final Phase 4 delivery after review and authorization. Stage 4G remains responsible for final browser/documentation review, CI verification, and approved delivery; it has not begun.
 
-Comments remain an unpaginated plain-text list with no editing, deletion, replies, real-time features, notifications, reactions, mentions, or rich text. Profile editing, dashboard aggregation, and later-phase infrastructure are not included. Existing JWT claims remain effective until expiry with no revocation service. Phase 4 remains in progress; Stage 4F and Phase 5 have not begun. No PR is opened, pushed, or merged by this stage.
+Comments remain an unpaginated plain-text list with no editing, deletion, replies, real-time features, notifications, reactions, mentions, or rich text. Profile editing, dashboard aggregation, and later-phase infrastructure are not included. Existing JWT claims remain effective until expiry with no revocation service. Phase 4 remains in progress; Stage 4G and Phase 5 have not begun. No push, PR, or merge is performed by this stage.
