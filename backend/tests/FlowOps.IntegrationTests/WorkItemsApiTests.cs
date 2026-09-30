@@ -322,12 +322,12 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
     {
         await ResetAsync();
         var item = await CreateAsync("Validation item", null, "Medium", null, null);
-        var payload = new Dictionary<string, object?>
+        Dictionary<string, object?> payload = operation switch
         {
-            ["title"] = "Updated",
-            ["priority"] = "High",
-            ["status"] = "InProgress",
-            ["assigneeUserId"] = (await _factory.SeedUserAsync(displayName: "Assignee")).Id
+            "patch" => new() { ["title"] = "Updated", ["priority"] = "High" },
+            "status" => new() { ["status"] = "InProgress" },
+            "assign" => new() { ["assigneeUserId"] = (await _factory.SeedUserAsync(displayName: "Assignee")).Id },
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
         if (versionJson is not null) payload["expectedVersion"] = JsonSerializer.Deserialize<JsonElement>(versionJson);
         var path = $"/api/v1/work-items/{item.Id}" + (operation == "patch" ? "" : $"/{operation}");
@@ -340,8 +340,32 @@ public class WorkItemsApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.NotEmpty(problem.RootElement.GetProperty("errors").EnumerateObject());
+        Assert.Contains(problem.RootElement.GetProperty("errors").EnumerateObject(),
+            field => field.Name.EndsWith("expectedVersion", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(1, (await GetAsync(item.Id)).Version);
+        Assert.Single((await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{item.Id}/activity"))!);
+    }
+
+    [Theory]
+    [InlineData("Unknown")]
+    [InlineData("999")]
+    public async Task InvalidStatus_ReturnsFieldValidationProblem_WithoutMutationOrActivity(string status)
+    {
+        await ResetAsync();
+        var item = await CreateAsync("Status validation", null, "Medium", null, null);
+        var before = await GetAsync(item.Id);
+
+        using var response = await _factory.Client.PostAsJsonAsync($"/api/v1/work-items/{item.Id}/status",
+            new { status, expectedVersion = before.Version });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(problem.RootElement.GetProperty("errors").TryGetProperty("Status", out _));
+        var after = await GetAsync(item.Id);
+        Assert.Equal(before.Status, after.Status);
+        Assert.Equal(before.Version, after.Version);
+        Assert.Equal(before.UpdatedAtUtc, after.UpdatedAtUtc);
         Assert.Single((await _factory.Client.GetFromJsonAsync<ActivityEventResponse[]>($"/api/v1/work-items/{item.Id}/activity"))!);
     }
 
