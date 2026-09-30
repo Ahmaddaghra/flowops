@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/Table';
 import { WorkItemStatusBadge } from './WorkItemStatusBadge';
 import { WorkItemPriorityBadge } from './WorkItemPriorityBadge';
+import { WorkItemAssignee } from './WorkItemAssignee';
 import { formatDate } from '@/lib/utils';
 import { User } from 'lucide-react';
 
@@ -66,14 +67,13 @@ export const WorkItemTable: React.FC<WorkItemTableProps> = ({ items }) => {
               <WorkItemPriorityBadge priority={item.priority} />
             </TableCell>
             <TableCell>
-              {item.assigneeName ? (
-                <span className="inline-flex items-center gap-1.5 text-xs text-slate-700">
-                  <User className="h-3.5 w-3.5 text-slate-400" />
-                  {item.assigneeName}
-                </span>
-              ) : (
-                <span className="text-xs text-slate-400 italic">Unassigned</span>
-              )}
+              <span className="inline-flex max-w-[160px] items-start gap-1.5 text-xs text-slate-700">
+                <User
+                  className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <WorkItemAssignee item={item} className="min-w-0" />
+              </span>
             </TableCell>
             <TableCell className="text-xs text-slate-500">
               {formatDate(item.createdAtUtc)}
