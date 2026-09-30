@@ -22,7 +22,7 @@ public sealed class WorkItemAuthorization(ICurrentUser currentUser)
     {
         var userId = RequireUser();
         var canEdit = IsAdmin || item.CreatedByUserId == userId || item.AssigneeUserId == userId;
-        var canSelfAssign = item.AssigneeUserId is null;
+        var canSelfAssign = item.AssigneeUserId is null && (IsAdmin || item.CreatedByUserId is not null);
         var canUnassign = IsAdmin || item.AssigneeUserId == userId;
         return new(canEdit, canEdit, IsAdmin || canSelfAssign || canUnassign,
             canSelfAssign, canUnassign, IsAdmin);
@@ -37,6 +37,8 @@ public sealed class WorkItemAuthorization(ICurrentUser currentUser)
     {
         var userId = RequireUser();
         if (IsAdmin) return;
+        if (item.CreatedByUserId is null && item.AssigneeUserId is null)
+            throw new ForbiddenOperationException();
         if (assigneeUserId == userId && item.AssigneeUserId is null) return;
         if (assigneeUserId is null && item.AssigneeUserId == userId) return;
         throw new ForbiddenOperationException();

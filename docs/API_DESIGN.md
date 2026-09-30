@@ -50,11 +50,11 @@ Protected calls send `Authorization: Bearer <accessToken>`. Missing, expired, or
 | Read items, categories, and activity | Allowed | Allowed |
 | Create | Allowed; current user is creator | Allowed; current user is creator |
 | Edit details or change status | Any item | Creator or current user assignee |
-| Assign an unassigned item | Any active user | Self only |
+| Assign an unassigned item | Any active user | Self only when the item has a creator user ID |
 | Reassign an assigned item | Any active user | Forbidden |
 | Unassign | Any item | Only an item currently assigned to self |
 
-A legacy item with both `createdByUserId` and `assigneeUserId` null permits detail/status mutation only by Admin. A Member may legitimately self-assign it under the assignment rules and then gains assignee permissions. A legacy display-name match never grants ownership. Any existing-item mutation requires `expectedVersion`.
+A legacy item with both `createdByUserId` and `assigneeUserId` null permits every work item mutation, including assignment, only by Admin. A Member cannot self-assign it. After an Admin legitimately assigns an active user, that assignee gains ordinary assignee permissions. If the assignment is removed while the creator remains null, the Admin-only boundary applies again. A legacy display-name match never grants ownership. Any existing-item mutation requires `expectedVersion`.
 
 Work item responses include nullable `createdByUserId` and `assigneeUserId`, nullable `createdBy`/`assignee` summaries (`id`, `displayName`), and server-computed `permissions`: `canEdit`, `canChangeStatus`, `canAssign`, `canSelfAssign`, `canUnassign`, and `canAssignOthers`. These flags guide UX; the server rechecks every mutation. `legacyAssigneeName` preserves the old Phase 3 snapshot. Compatibility field `assigneeName` resolves the current user's display name first, otherwise the legacy snapshot; it is not an authorization input and may show historical text even after a user-backed assignment is later removed.
 
@@ -149,4 +149,4 @@ Create, title, description, priority, category, status, and assignment changes p
 
 ## Scope deferred to later phases
 
-Stage 4A/4B stops at the backend authentication and authorization checkpoint. Comment persistence/API, React authentication and permissions UI, expanded authenticated Postman workflows, and manual QA/traceability remain pending. Dashboard summaries belong to Phase 5. The existing React client and Postman collection remain Phase 3 artifacts and do not yet send bearer tokens or user-backed assignment bodies.
+The reviewed Stage 4A/4B backend foundation is now used by Stage 4C's authenticated React client: real login/registration, authoritative `/auth/me` restoration, protected routes, and a centralized bearer client are implemented. Client route/session guards provide UX; the backend remains authoritative for authentication and every operation's permissions. The client preserves authentication on `403`, creates items with `assigneeUserId: null`, and displays assignment read-only. User-backed assignment controls and permission-aware mutation UX remain Stage 4D work. Comment persistence/API, expanded authenticated Postman workflows, and remaining manual QA/traceability artifacts are pending later Phase 4 stages. The Postman collection still represents the Phase 3 unauthenticated workflow. Dashboard summaries belong to Phase 5.

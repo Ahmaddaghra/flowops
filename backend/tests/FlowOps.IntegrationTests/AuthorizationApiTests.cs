@@ -307,7 +307,7 @@ public class AuthorizationApiTests : IClassFixture<FlowOpsApiFactory>
     }
 
     [Fact]
-    public async Task LegacyName_DoesNotGrantOwnership_AdminCanEdit_AndMemberCanLegitimatelySelfAssign()
+    public async Task LegacyName_GrantsNoOwnership_AdminAssignmentEnablesMemberMutation()
     {
         await _factory.ResetDatabaseAsync();
         var member = await _factory.SeedUserAsync(displayName: "Legacy matching name");
@@ -329,19 +329,67 @@ public class AuthorizationApiTests : IClassFixture<FlowOpsApiFactory>
         Assert.Equal(member.DisplayName, view.LegacyAssigneeName);
         Assert.Equal(member.DisplayName, view.AssigneeName);
         Assert.False(view.Permissions?.CanEdit);
+        Assert.False(view.Permissions?.CanChangeStatus);
+        Assert.False(view.Permissions?.CanAssign);
+        Assert.False(view.Permissions?.CanSelfAssign);
         using var forbidden = await MutateAsync(memberClient, legacy.Id, "edit", view.Version);
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         using var adminEdit = await MutateAsync(adminClient, legacy.Id, "edit", view.Version);
         Assert.Equal(HttpStatusCode.OK, adminEdit.StatusCode);
         view = (await adminEdit.Content.ReadFromJsonAsync<WorkItemResponse>())!;
-        view = await AssignAsync(memberClient, view, member.Id);
+        view = await AssignAsync(adminClient, view, member.Id);
+        view = await GetAsync(memberClient, legacy.Id);
         Assert.True(view.Permissions?.CanEdit);
+        Assert.True(view.Permissions?.CanChangeStatus);
         Assert.Equal(member.Id, view.Assignee?.Id);
         Assert.Equal(member.DisplayName, view.LegacyAssigneeName);
+        using var memberStatus = await MutateAsync(memberClient, legacy.Id, "status", view.Version);
+        Assert.Equal(HttpStatusCode.OK, memberStatus.StatusCode);
+        view = (await memberStatus.Content.ReadFromJsonAsync<WorkItemResponse>())!;
+        Assert.Equal("InProgress", view.Status);
+        view = await AssignAsync(memberClient, view, null);
+        Assert.Null(view.AssigneeUserId);
+        Assert.False(view.Permissions?.CanEdit);
+        Assert.False(view.Permissions?.CanAssign);
+        Assert.False(view.Permissions?.CanSelfAssign);
         var events = await ActivityAsync(memberClient, legacy.Id);
         Assert.Equal("System", events.Single(row => row.ActorUserId is null).ActorDisplayName);
         Assert.Equal(admin.Id, events.Single(row => row.EventType == "TitleChanged").ActorUserId);
-        Assert.Equal(member.Id, events.Single(row => row.EventType == "AssignmentChanged").ActorUserId);
+        Assert.Equal(member.Id, events.Single(row => row.EventType == "StatusChanged").ActorUserId);
+        Assert.Equal(2, events.Count(row => row.EventType == "AssignmentChanged"));
+        Assert.Contains(events, row => row.EventType == "AssignmentChanged" && row.ActorUserId == admin.Id);
+        Assert.Contains(events, row => row.EventType == "AssignmentChanged" && row.ActorUserId == member.Id);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_MemberSelfAssignmentReturnsForbiddenBeforeConcurrencyAndChangesNothing(bool stale)
+    {
+        await _factory.ResetDatabaseAsync();
+        var member = await _factory.SeedUserAsync(displayName: "Legacy matching name");
+        using var client = await _factory.CreateAuthenticatedClientAsync(member);
+        var legacy = new WorkItem("Unowned legacy item", assigneeName: member.DisplayName);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FlowOpsDbContext>();
+            db.WorkItems.Add(legacy);
+            db.ActivityEvents.Add(new ActivityEvent(legacy.Id, ActivityEventType.Created, "Historical creation"));
+            await db.SaveChangesAsync();
+        }
+
+        var view = await GetAsync(client, legacy.Id);
+        Assert.Null(view.CreatedByUserId);
+        Assert.Null(view.AssigneeUserId);
+        Assert.False(view.Permissions?.CanAssign);
+        Assert.False(view.Permissions?.CanSelfAssign);
+        var before = await SnapshotAsync(legacy.Id);
+        using var response = await MutateAsync(client, legacy.Id, "assign",
+            stale ? view.Version + 10 : view.Version, member.Id);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        await AssertSafeProblemAsync(response);
+        Assert.Equal(before, await SnapshotAsync(legacy.Id));
     }
 
     [Theory]

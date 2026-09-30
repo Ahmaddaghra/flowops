@@ -42,7 +42,7 @@ public class WorkItemAuthorizationTests
     [InlineData("Admin", "other", "none", true)]
     public void Assignment_ExactRoleRules(string role, string previous, string next, bool allowed)
     {
-        var item = new WorkItem("Item", assigneeUserId: Id(previous));
+        var item = new WorkItem("Item", createdByUserId: OtherId, assigneeUserId: Id(previous));
         var authorization = new WorkItemAuthorization(new TestCurrentUser(CurrentId, role));
         if (allowed) authorization.RequireAssignment(item, Id(next));
         else Assert.Throws<ForbiddenOperationException>(() => authorization.RequireAssignment(item, Id(next)));
@@ -128,12 +128,49 @@ public class WorkItemAuthorizationTests
         var item = new WorkItem("Legacy", assigneeName: "Current user");
         var auth = new WorkItemAuthorization(new TestCurrentUser(CurrentId, AppRoles.Member));
         Assert.Throws<ForbiddenOperationException>(() => auth.RequireEdit(item));
-        auth.RequireAssignment(item, CurrentId);
+        Assert.Throws<ForbiddenOperationException>(() => auth.RequireAssignment(item, CurrentId));
+        var admin = new WorkItemAuthorization(new TestCurrentUser(OtherId, AppRoles.Admin));
+        admin.RequireAssignment(item, CurrentId);
         Assert.True(item.AssignToUser(CurrentId));
         auth.RequireEdit(item);
         Assert.Equal("Current user", item.AssigneeName);
+        auth.RequireAssignment(item, null);
         item.AssignToUser(null);
         Assert.Throws<ForbiddenOperationException>(() => auth.RequireEdit(item));
+        Assert.Throws<ForbiddenOperationException>(() => auth.RequireAssignment(item, CurrentId));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(99)]
+    public async Task Legacy_MemberSelfAssignmentIsForbiddenBeforeVersionValidationAndWrites(long expectedVersion)
+    {
+        var item = new WorkItem("Legacy", assigneeName: "Current user");
+        var updatedAt = item.UpdatedAtUtc;
+        var store = new Mock<IWorkItemStore>();
+        store.Setup(x => x.GetByIdForUpdateAsync(item.Id, It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        var users = Directory();
+        var currentUser = new TestCurrentUser(CurrentId, AppRoles.Member);
+        var service = new WorkItemService(store.Object, NullLogger<WorkItemService>.Instance, currentUser, users.Object);
+        var permissions = new WorkItemAuthorization(currentUser).GetPermissions(item);
+
+        Assert.False(permissions.CanEdit);
+        Assert.False(permissions.CanChangeStatus);
+        Assert.False(permissions.CanAssign);
+        Assert.False(permissions.CanSelfAssign);
+        Assert.False(permissions.CanUnassign);
+        Assert.False(permissions.CanAssignOthers);
+        await Assert.ThrowsAsync<ForbiddenOperationException>(() => service.AssignAsync(item.Id,
+            new AssignWorkItemRequest { AssigneeUserId = CurrentId, ExpectedVersion = expectedVersion }));
+
+        Assert.Null(item.CreatedByUserId);
+        Assert.Null(item.AssigneeUserId);
+        Assert.Equal("Current user", item.AssigneeName);
+        Assert.Equal(1, item.Version);
+        Assert.Equal(updatedAt, item.UpdatedAtUtc);
+        store.Verify(x => x.AddActivityEventAsync(It.IsAny<ActivityEvent>(), It.IsAny<CancellationToken>()), Times.Never);
+        store.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        users.Verify(x => x.ExistsActiveAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

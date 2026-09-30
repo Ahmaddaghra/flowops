@@ -1,6 +1,6 @@
 # FlowOps Backend
 
-The backend is a .NET 10 Web API organized into Domain, Application, Infrastructure, and API projects. PostgreSQL stores both work items and ASP.NET Core Identity data. Domain stays independent of Identity; Application uses app-level identity/current-user abstractions and does not reference EF Core or Identity. Stage 4A/4B adds JWT authentication and server-side work item authorization; later Phase 4 frontend/comments/QA stages remain pending.
+The backend is a .NET 10 Web API organized into Domain, Application, Infrastructure, and API projects. PostgreSQL stores both work items and ASP.NET Core Identity data. Domain stays independent of Identity; Application uses app-level identity/current-user abstractions and does not reference EF Core or Identity. The reviewed Stage 4A/4B foundation provides JWT authentication and server-side work item authorization, now consumed by Stage 4C's authenticated frontend. User assignment controls, comments, and remaining Phase 4 QA artifacts are deferred.
 
 ## Authentication configuration
 
@@ -65,7 +65,7 @@ dotnet test backend/tests/FlowOps.IntegrationTests/FlowOps.IntegrationTests.cspr
 
 Use a disposable test database; the integration fixture creates and drops schemas in the configured database. GitHub Actions provisions PostgreSQL 17 for this job. Integration tests inject deterministic test-only JWT configuration and create their own users/roles; no developer JWT key, admin seed, or GitHub secret is required.
 
-Stage 4A/4B verification passed 80 unit tests and 100 PostgreSQL integration cases. Migration verification preserved six existing Phase 3 work items and 15 activity events through up/down-to-Phase-3/up in a disposable copy of the development database. The source database was untouched; detailed evidence is in the [Phase 4 checkpoint](../docs/phases/phase-4-auth-collaboration-qa.md).
+The historical Stage 4A/4B checkpoint passed 80 unit tests and 100 PostgreSQL integration cases. Stage 4C's final legacy-authorization correction passed 82 unit tests and 102 PostgreSQL integration cases, with restore, formatting, and full build passing without warnings/errors. Migration verification preserved six existing Phase 3 work items and 15 activity events through up/down-to-Phase-3/up in a disposable copy of the development database. The source database was untouched; detailed evidence is in the [Phase 4 checkpoint](../docs/phases/phase-4-auth-collaboration-qa.md).
 
 ## API
 

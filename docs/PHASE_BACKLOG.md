@@ -52,6 +52,8 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 
 The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication. Stage 4C is implemented and verified at the current incremental checkpoint; Stage 4D assignment controls and later collaboration work remain deferred. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
 
+The final Stage 4C preflight also tightened the existing legacy boundary: an item with both creator and user assignee IDs null permits only Admin work item mutations, including assignment, until an Admin legitimately assigns a user. This focused backend correction adds regression coverage without beginning Stage 4D UI work.
+
 1. [x] `feat(auth): add Identity schema, Member/Admin roles, JWT register/login/me, and user directory` (Stage 4A)
 2. [x] `feat(authz): add user-backed ownership/assignment and enforce role/ownership rules without weakening concurrency` (Stage 4B)
 3. [x] `test(api): verify authentication/authorization boundaries and additive migration compatibility` (Stage 4A/4B)

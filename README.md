@@ -143,6 +143,8 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Central bearer headers restricted to the same-origin API, guarded `401` invalidation, and session-preserving `403` errors
 - [x] Work item create/detail compatibility, read-only assignment, and actor display names
 
+Legacy work items with both creator and user assignee IDs null require Admin for every work item mutation, including assignment. A Member gains assignee rights only after an Admin legitimately assigns that item; historical display-name text never grants permission. Stage 4C's final preflight tightened this boundary without adding assignment UI.
+
 See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, auth session model, verification evidence, and remaining work.
 
 ### Planned (Remaining Phase 4 and Future Phases)
