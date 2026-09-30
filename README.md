@@ -9,9 +9,9 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
 - **Phase 3 — Work Item Lifecycle (Completed & Verified)**
-- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4A/4B backend checkpoint)**
+- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4C incremental checkpoint)**
 
-Phase 4 currently adds Identity/JWT authentication and server-side work item authorization. Implementation pauses after the Stage 4A/4B checkpoint for review. The React client and Postman collection still describe the Phase 3 workflow; frontend authentication, user assignment controls, comments, and expanded QA artifacts remain pending. Use authenticated Swagger/API requests to review this checkpoint.
+The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C now adds the authenticated React shell, login/register, protected routes, and session handling. User assignment controls, comments, and expanded QA artifacts remain pending; the Postman collection still needs its Phase 4 auth update. Stage 4D work is deferred beyond this incremental checkpoint.
 
 ### Tech Stack Summary
 
@@ -63,8 +63,8 @@ The frontend follows a modular, feature-based architecture with clean separation
 src/
 ├── app/               # Application bootstrap & router initialization
 ├── components/        # Layout shells and reusable UI primitives (Design System)
-├── features/          # Domain-specific modules (Work Items table, card, badges, pages)
-├── lib/               # Typed API client, RFC 7807 error handling & utility functions
+├── features/          # Authentication provider/routes/forms and Work Items views
+├── lib/               # Typed API client, shared auth session, error handling & utilities
 ├── pages/             # General application views (Settings, Dashboard preview, 404)
 ├── routes/            # Route declarations and navigation mapping
 └── types/             # Domain and API response contracts
@@ -133,16 +133,20 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Dashboard placeholder, settings/system status page, and not-found page
 - [x] Frontend CI workflow (ESLint, Prettier, Vitest, TypeScript compilation, Vite build)
 
-### Phase 4 Backend Checkpoint
+### Phase 4 Stages 4A–4C
 - [x] ASP.NET Core Identity in the existing PostgreSQL database, JWT register/login/me, and authenticated user directory
 - [x] Admin/Member roles and server-side creator/assignee authorization
 - [x] User-backed ownership and assignment, preserved legacy assignment snapshots, and authenticated activity actors
 - [x] Existing optimistic concurrency contract retained for authorized mutations
+- [x] Context/hooks auth state, real login/register, protected routes, current-user header, and logout
+- [x] SessionStorage token/expiry restoration through authoritative `/auth/me`, with retryable loading failures
+- [x] Central bearer headers restricted to the same-origin API, guarded `401` invalidation, and session-preserving `403` errors
+- [x] Work item create/detail compatibility, read-only assignment, and actor display names
 
-See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, verification evidence, and checkpoint limitations.
+See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, auth session model, verification evidence, and remaining work.
 
 ### Planned (Remaining Phase 4 and Future Phases)
-- [ ] React authentication, protected routes, session storage, and user-backed assignment controls (Phase 4)
+- [ ] Permission-aware user assignment controls and collaboration UI (Stage 4D)
 - [ ] Work item comments, expanded Postman workflows, manual QA, bug reports, and traceability (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
@@ -215,7 +219,7 @@ The web application will be running at `http://localhost:5173`.
 All requests to `/api/v1` are automatically proxied to the backend on `http://localhost:5055`.
 The frontend uses `/api/v1` by default. To set it explicitly, copy `.env.example` to `.env` inside `frontend/`; keep `/api/v1` as the value for local development so requests continue through the Vite proxy.
 
-At the Stage 4A/4B checkpoint the frontend remains the Phase 3 client and does not send a bearer token. Its work item requests now receive `401`; React authentication and assignment changes begin only after checkpoint review. The existing Postman collection likewise needs the later Phase 4 auth workflow update.
+Open `/register` to create a Member account or `/login` to sign in. Successful authentication returns to a validated requested application route; otherwise it opens `/work-items`. The current user and logout appear in the header. Reloading restores token/expiry metadata from sessionStorage and validates the user through `/auth/me`; a connection failure offers retry or sign out without silently discarding the token. Assignment is currently read-only, with legacy names labelled historical. See [frontend setup and session behavior](frontend/README.md); Postman auth expansion remains pending.
 
 ### 5. Frontend Scripts
 
@@ -283,7 +287,7 @@ flowops/
 │       ├── phase-1-backend-foundation.md # Phase 1 documentation
 │       ├── phase-2-frontend-foundation.md # Phase 2 documentation
 │       ├── phase-3-work-item-lifecycle.md # Phase 3 implementation and verification
-│       └── phase-4-auth-collaboration-qa.md # Stage 4A/4B backend checkpoint
+│       └── phase-4-auth-collaboration-qa.md # Backend foundation and Stage 4C checkpoint
 ├── docker-compose.yml               # Hardened local PostgreSQL container configuration
 ├── .env.example                     # Local development environment template
 ├── CONTRIBUTING.md

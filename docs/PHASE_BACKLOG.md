@@ -50,12 +50,12 @@ Each issue should include API, persistence, tests, and UI when applicable rather
 
 ## Phase 4 — Authentication, Collaboration & QA (In Progress)
 
-The current review boundary is Stage 4A/4B. Implementation must stop here for checkpoint review before frontend authentication or collaboration work begins. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
+The Stage 4A/4B checkpoint was reviewed before beginning frontend authentication. Stage 4C is implemented and verified at the current incremental checkpoint; Stage 4D assignment controls and later collaboration work remain deferred. See the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
 
 1. [x] `feat(auth): add Identity schema, Member/Admin roles, JWT register/login/me, and user directory` (Stage 4A)
 2. [x] `feat(authz): add user-backed ownership/assignment and enforce role/ownership rules without weakening concurrency` (Stage 4B)
 3. [x] `test(api): verify authentication/authorization boundaries and additive migration compatibility` (Stage 4A/4B)
-4. [ ] `feat(web): add auth state, login/register, protected routes, token-aware client, and logout` (Stage 4C)
+4. [x] `feat(web): add auth state, login/register, protected routes, token-aware client, and logout` (Stage 4C)
 5. [ ] `feat(web): add permission-aware user assignment controls and regression tests` (Stage 4D)
 6. [ ] `feat(comments): add persisted comments, authenticated actors, activity, UI, and tests` (Stage 4E)
 7. [ ] `test(api): expand remaining negative-path workflows and authenticated Postman requests` (Stage 4F)
