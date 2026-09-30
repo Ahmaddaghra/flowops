@@ -9,7 +9,6 @@ import { workItemMutationErrorMessage } from '../utils/mutationErrorMessage';
 interface WorkItemFormProps {
   categories: Category[];
   initialValues?: Partial<CreateWorkItemRequest>;
-  includeAssignee?: boolean;
   submitLabel: string;
   onCancel: () => void;
   onSubmit: (request: CreateWorkItemRequest) => Promise<void>;
@@ -30,7 +29,6 @@ const fieldErrorsFrom = (error: ApiError): Record<string, string> => {
 export const WorkItemForm: React.FC<WorkItemFormProps> = ({
   categories,
   initialValues,
-  includeAssignee = false,
   submitLabel,
   onCancel,
   onSubmit,
@@ -41,7 +39,6 @@ export const WorkItemForm: React.FC<WorkItemFormProps> = ({
     initialValues?.priority ?? 'Medium'
   );
   const [categoryId, setCategoryId] = useState(initialValues?.categoryId ?? '');
-  const [assigneeName, setAssigneeName] = useState(initialValues?.assigneeName ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,9 +60,6 @@ export const WorkItemForm: React.FC<WorkItemFormProps> = ({
       nextErrors.title = 'Title cannot exceed 200 characters.';
     if (description.length > 4000)
       nextErrors.description = 'Description cannot exceed 4000 characters.';
-    if (includeAssignee && assigneeName.trim().length > 100) {
-      nextErrors.assigneeName = 'Assignee cannot exceed 100 characters.';
-    }
     setErrors(nextErrors);
     setSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
@@ -77,15 +71,18 @@ export const WorkItemForm: React.FC<WorkItemFormProps> = ({
         description: description || null,
         priority,
         categoryId: categoryId || null,
-        assigneeName: includeAssignee ? assigneeName.trim() || null : null,
+        assigneeUserId: null,
       });
     } catch (error: unknown) {
       if (error instanceof ApiError) {
         setErrors(fieldErrorsFrom(error));
         setSubmitError(
-          error.status === 409
-            ? workItemMutationErrorMessage(error, 'Could not save the work item.')
-            : (error.problemDetails?.detail ??
+          error.status === 403
+            ? (error.problemDetails?.detail ??
+                'You do not have permission to change this work item.')
+            : error.status === 409
+              ? workItemMutationErrorMessage(error, 'Could not save the work item.')
+              : (error.problemDetails?.detail ??
                 (error.status === 0
                   ? error.message
                   : 'Please review the highlighted fields and try again.'))
@@ -175,19 +172,6 @@ export const WorkItemForm: React.FC<WorkItemFormProps> = ({
           error={errors.categoryId}
         />
       </div>
-      {includeAssignee && (
-        <Input
-          label="Assignee name"
-          value={assigneeName}
-          onChange={(event) => {
-            setAssigneeName(event.target.value);
-            clearError('assigneeName');
-          }}
-          maxLength={100}
-          error={errors.assigneeName}
-          hint="Pre-auth assignment by display name. User accounts arrive in Phase 4."
-        />
-      )}
       <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
         <Button
           type="button"

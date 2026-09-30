@@ -30,6 +30,12 @@ const item: WorkItem = {
   priority: 'Medium',
   categoryId: 'category-1',
   categoryName: 'Operations',
+  createdByUserId: 'user-1',
+  assigneeUserId: 'user-1',
+  createdBy: { id: 'user-1', displayName: 'Ahmad' },
+  assignee: { id: 'user-1', displayName: 'Ahmad' },
+  permissions: null,
+  legacyAssigneeName: null,
   assigneeName: 'Ahmad',
   createdAtUtc: '2026-09-29T10:00:00Z',
   updatedAtUtc: '2026-09-29T10:00:00Z',
@@ -54,6 +60,8 @@ const activity: WorkItemActivity[] = [
     description: 'Priority changed to High',
     createdAtUtc: '2026-09-29T12:00:00Z',
     actorUserId: null,
+    actor: null,
+    actorDisplayName: 'System',
   },
   {
     id: 'event-1',
@@ -62,6 +70,8 @@ const activity: WorkItemActivity[] = [
     description: 'Work item created',
     createdAtUtc: '2026-09-29T10:00:00Z',
     actorUserId: null,
+    actor: null,
+    actorDisplayName: 'System',
   },
 ];
 
@@ -73,6 +83,8 @@ const secondActivity: WorkItemActivity[] = [
     description: 'Release notes work item created',
     createdAtUtc: '2026-09-29T11:00:00Z',
     actorUserId: null,
+    actor: null,
+    actorDisplayName: 'System',
   },
 ];
 
@@ -203,16 +215,14 @@ describe('WorkItemDetailPage', () => {
     });
     expect(screen.getAllByText('To Do')).toHaveLength(2);
 
-    vi.mocked(workItemsApi.assign).mockResolvedValue({
+    vi.mocked(workItemsApi.changeStatus).mockResolvedValue({
       ...updated,
       version: 5,
-      assigneeName: 'Sara',
+      status: 'InProgress',
     });
-    await user.clear(screen.getByLabelText('Assignee name'));
-    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
-    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
-    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
-      assigneeName: 'Sara',
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
+      status: 'InProgress',
       expectedVersion: 4,
     });
   });
@@ -251,18 +261,18 @@ describe('WorkItemDetailPage', () => {
     expect(screen.getByRole('heading', { name: item.title })).toBeTruthy();
   });
 
-  it('uses the status response version for the next assignment', async () => {
+  it('uses the status response version for the next edit', async () => {
     const user = userEvent.setup();
     vi.mocked(workItemsApi.changeStatus).mockResolvedValue({
       ...item,
       status: 'InProgress',
       version: 4,
     });
-    vi.mocked(workItemsApi.assign).mockResolvedValue({
+    vi.mocked(workItemsApi.update).mockResolvedValue({
       ...item,
       status: 'InProgress',
       version: 5,
-      assigneeName: 'Sara',
+      title: 'Updated investigation',
     });
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
@@ -272,14 +282,17 @@ describe('WorkItemDetailPage', () => {
       status: 'InProgress',
       expectedVersion: 3,
     });
-    await user.clear(screen.getByLabelText('Assignee name'));
-    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
-    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
-    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
-      assigneeName: 'Sara',
-      expectedVersion: 4,
-    });
-    expect(await screen.findByText('Currently assigned to Sara')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Updated investigation');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(workItemsApi.update).toHaveBeenCalledWith(
+      item.id,
+      expect.objectContaining({ title: 'Updated investigation', expectedVersion: 4 })
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Updated investigation' })
+    ).toBeTruthy();
   });
 
   it('shows a clear conflict when the server rejects a status transition', async () => {
@@ -329,32 +342,22 @@ describe('WorkItemDetailPage', () => {
     expect(workItemsApi.changeStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('explains stale assignment conflicts and prompts refresh', async () => {
+  it('shows a permission message when a status mutation is forbidden', async () => {
     const user = userEvent.setup();
-    vi.mocked(workItemsApi.assign).mockRejectedValue(
-      new ApiError(
-        'This work item was modified by another request. Refresh it and try again.',
-        409,
-        {
-          title: 'Work Item Concurrency Conflict',
-          detail:
-            'This work item was modified by another request. Refresh it and try again.',
-        }
-      )
+    vi.mocked(workItemsApi.changeStatus).mockRejectedValue(
+      new ApiError('You do not have permission to perform this action.', 403)
     );
     renderDetail();
-    await screen.findByText(item.title);
-    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
-    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
-
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
     expect(
-      await screen.findByText(
-        'This work item was modified by another request. Refresh it and try again.'
-      )
+      await screen.findByText('You do not have permission to perform this action.')
     ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: item.title })).toBeTruthy();
+    expect(workItemsApi.changeStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('clears status and assignment errors when opening another work item', async () => {
+  it('clears status and edit errors when opening another work item', async () => {
     const user = userEvent.setup();
     vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
       id === secondItem.id ? secondItem : item
@@ -365,36 +368,36 @@ describe('WorkItemDetailPage', () => {
         detail: 'Status conflict for the first item.',
       })
     );
-    vi.mocked(workItemsApi.assign).mockRejectedValue(
-      new ApiError('Assignment conflict for the first item.', 409, {
+    vi.mocked(workItemsApi.update).mockRejectedValue(
+      new ApiError('Edit conflict for the first item.', 409, {
         title: 'Work Item Concurrency Conflict',
-        detail: 'Assignment conflict for the first item.',
+        detail: 'Edit conflict for the first item.',
       })
     );
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
-
     await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
     expect(
       await screen.findByText(
         'This status change is not allowed: Status conflict for the first item.'
       )
     ).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Unassign' }));
-    expect(
-      await screen.findByText('Assignment conflict for the first item.')
-    ).toBeTruthy();
-
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Unsaved first item');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Edit conflict for the first item.')).toBeTruthy();
     await user.click(screen.getByRole('link', { name: 'Open second work item' }));
     expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
     expect(screen.queryByText(/Status conflict for the first item/)).toBeNull();
-    expect(screen.queryByText('Assignment conflict for the first item.')).toBeNull();
+    expect(screen.queryByText('Edit conflict for the first item.')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('ignores late status and assignment conflicts from the previous work item', async () => {
+  it('ignores late status and edit conflicts from the previous work item', async () => {
     const user = userEvent.setup();
     let rejectStatus: ((error: unknown) => void) | undefined;
-    let rejectAssignment: ((error: unknown) => void) | undefined;
+    let rejectEdit: ((error: unknown) => void) | undefined;
     vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
       id === secondItem.id ? secondItem : item
     );
@@ -403,43 +406,37 @@ describe('WorkItemDetailPage', () => {
         rejectStatus = reject;
       })
     );
-    vi.mocked(workItemsApi.assign).mockReturnValue(
+    vi.mocked(workItemsApi.update).mockReturnValue(
       new Promise<WorkItem>((_, reject) => {
-        rejectAssignment = reject;
+        rejectEdit = reject;
       })
     );
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
-
     await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
-    await user.clear(screen.getByLabelText('Assignee name'));
-    await user.type(screen.getByLabelText('Assignee name'), 'Sara');
-    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Pending first edit');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
       status: 'InProgress',
       expectedVersion: 3,
     });
-    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
-      assigneeName: 'Sara',
-      expectedVersion: 3,
-    });
+    expect(workItemsApi.update).toHaveBeenCalledWith(
+      item.id,
+      expect.objectContaining({ title: 'Pending first edit', expectedVersion: 3 })
+    );
     await user.click(screen.getByRole('link', { name: 'Open second work item' }));
     expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
-
     await act(async () => {
       rejectStatus?.(new ApiError('Late status conflict from the first item.', 409));
-      rejectAssignment?.(
-        new ApiError('Late assignment conflict from the first item.', 409)
-      );
+      rejectEdit?.(new ApiError('Late edit conflict from the first item.', 409));
     });
-
     expect(screen.queryByText('Late status conflict from the first item.')).toBeNull();
-    expect(
-      screen.queryByText('Late assignment conflict from the first item.')
-    ).toBeNull();
+    expect(screen.queryByText('Late edit conflict from the first item.')).toBeNull();
   });
 
-  it.each(['status', 'assignment'])(
+  it.each(['status', 'edit'])(
     'scopes a pending %s mutation to its route and ignores its late completion',
     async (operation) => {
       const user = userEvent.setup();
@@ -456,7 +453,7 @@ describe('WorkItemDetailPage', () => {
       const mutation =
         operation === 'status'
           ? vi.mocked(workItemsApi.changeStatus)
-          : vi.mocked(workItemsApi.assign);
+          : vi.mocked(workItemsApi.update);
       mutation.mockReturnValueOnce(first).mockReturnValueOnce(second);
       vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
         id === secondItem.id ? secondItem : item
@@ -468,9 +465,10 @@ describe('WorkItemDetailPage', () => {
         if (operation === 'status')
           await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
         else {
-          await user.clear(screen.getByLabelText('Assignee name'));
-          await user.type(screen.getByLabelText('Assignee name'), 'Sara');
-          await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+          await user.click(screen.getByRole('button', { name: 'Edit details' }));
+          await user.clear(screen.getByLabelText('Title'));
+          await user.type(screen.getByLabelText('Title'), 'Edited current item');
+          await user.click(screen.getByRole('button', { name: 'Save changes' }));
         }
       };
       renderDetail();
@@ -478,14 +476,15 @@ describe('WorkItemDetailPage', () => {
       await startMutation();
       await user.click(screen.getByRole('link', { name: 'Open second work item' }));
       await screen.findByRole('heading', { name: secondItem.title });
-      const control = operation === 'status' ? 'Move to In Progress' : 'Unassign';
-      expect(screen.getByRole('button', { name: control })).toHaveProperty(
-        'disabled',
-        false
-      );
-
+      expect(
+        screen.getByRole('button', {
+          name: operation === 'status' ? 'Move to In Progress' : 'Edit details',
+        })
+      ).toHaveProperty('disabled', false);
       await startMutation();
-      expect(screen.getByRole('button', { name: control })).toHaveProperty(
+      const pendingControl =
+        operation === 'status' ? 'Move to In Progress' : 'Save changes';
+      expect(screen.getByRole('button', { name: pendingControl })).toHaveProperty(
         'disabled',
         true
       );
@@ -499,52 +498,76 @@ describe('WorkItemDetailPage', () => {
           });
         else rejectFirst?.(new ApiError('Late first-item conflict', 409));
       });
-      expect(screen.getByRole('button', { name: control })).toHaveProperty(
+      expect(screen.getByRole('button', { name: pendingControl })).toHaveProperty(
         'disabled',
         true
       );
       expect(screen.getByRole('heading', { name: secondItem.title })).toBeTruthy();
       expect(screen.queryByText('Late first-item conflict')).toBeNull();
-
       await act(async () => {
         resolveSecond?.({
           ...secondItem,
           version: 4,
+          title: operation === 'edit' ? 'Second saved edit' : secondItem.title,
           status: operation === 'status' ? 'InProgress' : secondItem.status,
-          assigneeName: operation === 'assignment' ? 'Sara' : secondItem.assigneeName,
         });
       });
       expect(
         screen.getByRole('button', {
-          name: operation === 'status' ? 'Move to Blocked' : 'Unassign',
+          name: operation === 'status' ? 'Move to Blocked' : 'Edit details',
         })
       ).toHaveProperty('disabled', false);
+      expect(workItemsApi.getActivity).toHaveBeenCalledTimes(3);
     }
   );
 
-  it('updates the assignee and refreshes activity', async () => {
-    const user = userEvent.setup();
-    vi.mocked(workItemsApi.assign)
-      .mockResolvedValueOnce({ ...item, version: 4, assigneeName: 'Sara' })
-      .mockResolvedValueOnce({ ...item, version: 5, assigneeName: null });
+  it('shows current and historical assignees read-only without assignment controls', async () => {
+    vi.mocked(workItemsApi.getById).mockResolvedValue({
+      ...item,
+      legacyAssigneeName: 'Legacy display name',
+    });
     renderDetail();
-    await screen.findByText(item.title);
+    await screen.findByRole('heading', { name: item.title });
+    expect(screen.getByText('Current assignee:')).toHaveProperty(
+      'textContent',
+      'Current assignee: Ahmad'
+    );
+    expect(screen.getByText('Historical assignee: Legacy display name')).toBeTruthy();
+    expect(screen.queryByLabelText('Assignee name')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save assignment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Unassign' })).toBeNull();
+    expect(workItemsApi.assign).not.toHaveBeenCalled();
+  });
 
-    const assigneeInput = screen.getByLabelText('Assignee name');
-    await user.clear(assigneeInput);
-    await user.type(assigneeInput, 'Sara');
-    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+  it('keeps a legacy snapshot separate from current user assignment', async () => {
+    vi.mocked(workItemsApi.getById).mockResolvedValue({
+      ...item,
+      createdByUserId: null,
+      assigneeUserId: null,
+      createdBy: null,
+      assignee: null,
+      legacyAssigneeName: 'Ahmad',
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    expect(screen.getByText('Unassigned')).toBeTruthy();
+    expect(screen.getByText('Historical assignee: Ahmad')).toBeTruthy();
+  });
 
-    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
-      assigneeName: 'Sara',
-      expectedVersion: 3,
+  it('renders the authenticated activity actor display name instead of their ID', async () => {
+    vi.mocked(workItemsApi.getActivity).mockResolvedValue([
+      {
+        ...activity[0],
+        actorUserId: 'user-actor',
+        actor: { id: 'user-actor', displayName: 'Sara' },
+        actorDisplayName: 'Sara',
+      },
+    ]);
+    renderDetail();
+    const activityList = await screen.findByRole('list', {
+      name: 'Work item activity, newest first',
     });
-    expect(await screen.findByText('Currently assigned to Sara')).toBeTruthy();
-    expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2);
-    await user.click(screen.getByRole('button', { name: 'Unassign' }));
-    expect(workItemsApi.assign).toHaveBeenLastCalledWith(item.id, {
-      assigneeName: null,
-      expectedVersion: 4,
-    });
+    expect(activityList.textContent).toContain('Sara');
+    expect(activityList.textContent).not.toContain('user-actor');
   });
 });

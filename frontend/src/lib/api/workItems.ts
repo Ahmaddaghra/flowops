@@ -72,7 +72,7 @@ export const workItemsApi = {
   },
 
   getHealth: async (): Promise<{ status: string }> => {
-    return apiClient<{ status: string }>('/health');
+    return apiClient<{ status: string }>('/health', { auth: false });
   },
 };
 

@@ -1,17 +1,9 @@
-import React, {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, ArrowLeft, Calendar, Check, Clock, Copy, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -81,10 +73,7 @@ export const WorkItemDetailPage: React.FC = () => {
   } | null>(null);
   const [editingItem, setEditingItem] = useState<WorkItem | null>(null);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
-  const [isSavingAssignee, setIsSavingAssignee] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
-  const [assigneeDraft, setAssigneeDraft] = useState('');
   const [copied, setCopied] = useState(false);
 
   useLayoutEffect(() => {
@@ -94,9 +83,7 @@ export const WorkItemDetailPage: React.FC = () => {
     activityRequestSequence.current++;
     mutationRouteSequence.current++;
     setIsChangingStatus(false);
-    setIsSavingAssignee(false);
     setStatusError(null);
-    setAssignmentError(null);
     setEditingItem(null);
   }, [id]);
 
@@ -117,7 +104,6 @@ export const WorkItemDetailPage: React.FC = () => {
       const data = await workItemsApi.getById(id);
       if (requestId === detailRequestSequence.current && detailItemId.current === id) {
         setItemResult({ workItemId: id, item: data });
-        setAssigneeDraft(data.assigneeName ?? '');
       }
     } catch (err: unknown) {
       if (requestId === detailRequestSequence.current && detailItemId.current === id) {
@@ -230,56 +216,6 @@ export const WorkItemDetailPage: React.FC = () => {
         );
     } finally {
       if (isCurrentMutationRoute(routeSequence)) setIsChangingStatus(false);
-    }
-  };
-
-  const handleAssign = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!id || !item) return;
-    setAssignmentError(null);
-    setIsSavingAssignee(true);
-    const routeSequence = mutationRouteSequence.current;
-    try {
-      const updated = await workItemsApi.assign(id, {
-        assigneeName: assigneeDraft.trim() || null,
-        expectedVersion: item.version,
-      });
-      if (isCurrentMutationRoute(routeSequence)) {
-        updateCurrentItem(updated);
-        await fetchActivity();
-      }
-    } catch (err: unknown) {
-      if (isCurrentMutationRoute(routeSequence))
-        setAssignmentError(
-          workItemMutationErrorMessage(err, 'Could not update the assignment.')
-        );
-    } finally {
-      if (isCurrentMutationRoute(routeSequence)) setIsSavingAssignee(false);
-    }
-  };
-
-  const handleUnassign = async () => {
-    if (!id || !item) return;
-    setAssignmentError(null);
-    setIsSavingAssignee(true);
-    const routeSequence = mutationRouteSequence.current;
-    try {
-      const updated = await workItemsApi.assign(id, {
-        assigneeName: null,
-        expectedVersion: item.version,
-      });
-      if (isCurrentMutationRoute(routeSequence)) {
-        updateCurrentItem(updated);
-        setAssigneeDraft('');
-        await fetchActivity();
-      }
-    } catch (err: unknown) {
-      if (isCurrentMutationRoute(routeSequence))
-        setAssignmentError(
-          workItemMutationErrorMessage(err, 'Could not unassign this work item.')
-        );
-    } finally {
-      if (isCurrentMutationRoute(routeSequence)) setIsSavingAssignee(false);
     }
   };
 
@@ -472,8 +408,7 @@ export const WorkItemDetailPage: React.FC = () => {
                             {event.description}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            {activityLabels[event.eventType]} ·{' '}
-                            {event.actorUserId ?? 'System'} ·{' '}
+                            {activityLabels[event.eventType]} · {event.actorDisplayName} ·{' '}
                             {formatDate(event.createdAtUtc)}
                           </p>
                         </div>
@@ -534,53 +469,18 @@ export const WorkItemDetailPage: React.FC = () => {
             <CardHeader>
               <CardTitle>Assignment</CardTitle>
             </CardHeader>
-            <CardContent>
-              <form className="space-y-3" onSubmit={handleAssign}>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-slate-700">
+                Current assignee:{' '}
+                <span className="font-medium text-slate-900">
+                  {item.assignee?.displayName ?? 'Unassigned'}
+                </span>
+              </p>
+              {item.legacyAssigneeName && (
                 <p className="text-xs text-slate-500">
-                  Pre-auth assignment uses a display name. User accounts are part of Phase
-                  4.
+                  Historical assignee: {item.legacyAssigneeName}
                 </p>
-                <Input
-                  label="Assignee name"
-                  value={assigneeDraft}
-                  onChange={(event) => setAssigneeDraft(event.target.value)}
-                  maxLength={100}
-                  hint={
-                    item.assigneeName
-                      ? `Currently assigned to ${item.assigneeName}`
-                      : 'Leave empty to keep this item unassigned.'
-                  }
-                />
-                {assignmentError && (
-                  <p className="text-sm text-rose-700" role="alert">
-                    {assignmentError}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="submit"
-                    size="sm"
-                    isLoading={isSavingAssignee}
-                    disabled={
-                      isSavingAssignee ||
-                      assigneeDraft.trim() === (item.assigneeName ?? '')
-                    }
-                  >
-                    Save assignment
-                  </Button>
-                  {item.assigneeName && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleUnassign()}
-                      disabled={isSavingAssignee}
-                    >
-                      Unassign
-                    </Button>
-                  )}
-                </div>
-              </form>
+              )}
             </CardContent>
           </Card>
         </div>
