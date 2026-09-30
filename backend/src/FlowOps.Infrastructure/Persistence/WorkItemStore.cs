@@ -81,6 +81,19 @@ public class WorkItemStore : IWorkItemStore
         await _dbContext.WorkItems.AddAsync(item, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Comment>> GetCommentsAsync(Guid workItemId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Comments.AsNoTracking()
+            .Where(comment => comment.WorkItemId == workItemId)
+            .OrderBy(comment => comment.CreatedAtUtc)
+            .ThenBy(comment => comment.Id)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddCommentAsync(Comment comment, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(comment);
+        await _dbContext.Comments.AddAsync(comment, cancellationToken);
+    }
+
     public async Task AddActivityEventAsync(ActivityEvent activityEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(activityEvent);

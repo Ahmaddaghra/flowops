@@ -17,6 +17,7 @@ public class FlowOpsDbContext : IdentityDbContext<ApplicationUser, IdentityRole<
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
+    public DbSet<Comment> Comments => Set<Comment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
