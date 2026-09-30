@@ -1,6 +1,7 @@
 import React from 'react';
-import { Menu, Activity } from 'lucide-react';
+import { Menu, Activity, LogOut } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '@/features/auth/useAuth';
 
 interface HeaderProps {
   onOpenMobileNav: () => void;
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   isBackendHealthy,
 }) => {
   const location = useLocation();
+  const { user, logout } = useAuth();
 
   const getBreadcrumb = () => {
     if (location.pathname.startsWith('/work-items/')) return 'Work Items / Detail';
@@ -43,9 +45,9 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="text-sm font-medium text-slate-500">{getBreadcrumb()}</span>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-4">
         {/* API Health indicator */}
-        <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-full">
+        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-full">
           <Activity className="h-3.5 w-3.5 text-slate-400" />
           <span>API:</span>
           {isBackendHealthy === null ? (
@@ -65,6 +67,28 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
         </div>
+        {user && (
+          <div className="min-w-0 max-w-28 sm:max-w-44 text-right">
+            <p
+              className="truncate text-xs sm:text-sm font-medium text-slate-800"
+              title={user.displayName}
+            >
+              {user.displayName}
+            </p>
+            <p className="text-[10px] sm:text-xs text-slate-500">
+              {user.roles.join(' · ')}
+            </p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={logout}
+          className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30"
+          aria-label="Log out"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+          <span className="hidden sm:inline">Log out</span>
+        </button>
       </div>
     </header>
   );
