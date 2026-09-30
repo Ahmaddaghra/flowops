@@ -1,64 +1,69 @@
 import { ApiError, ProblemDetails } from '@/types/api';
+import { authSession } from '@/lib/authSession';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+export interface ApiRequestOptions extends RequestInit {
+  /** Public credential/health calls neither attach a session nor invalidate it. */
+  auth?: boolean;
+}
 
 export async function apiClient<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: ApiRequestOptions = {}
 ): Promise<T> {
-  const url = endpoint.startsWith('http')
-    ? endpoint
-    : `${BASE_URL.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`;
-
-  const defaultHeaders: HeadersInit = {
-    Accept: 'application/json',
-  };
-
-  if (options.body && typeof options.body === 'string') {
-    defaultHeaders['Content-Type'] = 'application/json';
+  const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+  const base = new URL(`${BASE_URL.replace(/\/$/, '')}/`, window.location.origin);
+  const url = /^(https?:)?\/\//i.test(endpoint)
+    ? new URL(endpoint, window.location.origin)
+    : new URL(endpoint.replace(/^\//, ''), base);
+  const trustedApi =
+    base.origin === window.location.origin &&
+    url.origin === window.location.origin &&
+    !url.username &&
+    !url.password &&
+    (url.pathname === '/api/v1' || url.pathname.startsWith('/api/v1/')) &&
+    (url.pathname.startsWith(base.pathname) ||
+      url.pathname === base.pathname.slice(0, -1));
+  const { auth = true, headers: requestHeaders, ...requestOptions } = options;
+  const requestSession = authSession.getSnapshot();
+  const headers = new Headers(requestHeaders);
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  if (options.body && typeof options.body === 'string' && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  // The central client never forwards a bearer token to an external origin/path.
+  headers.delete('Authorization');
+  if (auth && trustedApi && requestSession.accessToken) {
+    headers.set('Authorization', `Bearer ${requestSession.accessToken}`);
   }
 
-  const config: RequestInit = {
-    ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  };
-
   try {
-    const response = await fetch(url, config);
-
+    const response = await fetch(url.href, {
+      ...requestOptions,
+      headers,
+      ...(auth && trustedApi ? { redirect: 'error' as const } : {}),
+    });
     if (!response.ok) {
+      if (response.status === 401 && auth && trustedApi) {
+        authSession.invalidateIfCurrent(requestSession);
+      }
       let problemDetails: ProblemDetails | undefined;
       let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
-
       try {
-        const errorJson = await response.json();
-        problemDetails = errorJson as ProblemDetails;
-        if (problemDetails.detail) {
-          errorMessage = problemDetails.detail;
-        } else if (problemDetails.title) {
-          errorMessage = problemDetails.title;
-        }
+        problemDetails = (await response.json()) as ProblemDetails;
+        errorMessage = problemDetails.detail || problemDetails.title || errorMessage;
       } catch {
-        // Fall back to default error message if response is not JSON
+        // Non-JSON errors retain the safe HTTP status message.
       }
-
       throw new ApiError(errorMessage, response.status, problemDetails);
     }
-
-    if (response.status === 204) {
-      return {} as T;
-    }
-
+    if (response.status === 204) return {} as T;
     return (await response.json()) as T;
-  } catch (err) {
-    if (err instanceof ApiError) {
-      throw err;
-    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError(
-      err instanceof Error ? err.message : 'Unable to connect to the FlowOps API server.',
+      error instanceof Error
+        ? error.message
+        : 'Unable to connect to the FlowOps API server.',
       0
     );
   }
