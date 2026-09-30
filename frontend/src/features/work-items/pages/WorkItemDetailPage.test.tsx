@@ -7,6 +7,7 @@ import {
   Category,
   WorkItem,
   WorkItemActivity,
+  WorkItemComment,
   WorkItemPermissions,
 } from '@/types/workItems';
 import { categoriesApi, workItemsApi } from '@/lib/api/workItems';
@@ -24,6 +25,8 @@ vi.mock('@/lib/api/workItems', () => ({
     changeStatus: vi.fn(),
     assign: vi.fn(),
     getActivity: vi.fn(),
+    getComments: vi.fn(),
+    addComment: vi.fn(),
     getHealth: vi.fn(),
   },
 }));
@@ -126,6 +129,25 @@ const secondActivity: WorkItemActivity[] = [
   },
 ];
 
+const comment: WorkItemComment = {
+  id: 'comment-1',
+  workItemId: item.id,
+  body: 'Investigation update',
+  createdAtUtc: '2026-09-30T12:00:00Z',
+  author: { id: 'user-2', displayName: 'Sara' },
+};
+
+const commentActivity: WorkItemActivity = {
+  id: 'comment-event-1',
+  workItemId: item.id,
+  eventType: 'CommentAdded',
+  description: 'Comment added',
+  createdAtUtc: comment.createdAtUtc,
+  actorUserId: comment.author.id,
+  actor: comment.author,
+  actorDisplayName: comment.author.displayName,
+};
+
 const renderDetail = () =>
   render(
     <AuthContext.Provider value={auth}>
@@ -160,6 +182,8 @@ describe('WorkItemDetailPage', () => {
     };
     vi.mocked(workItemsApi.getById).mockResolvedValue(item);
     vi.mocked(workItemsApi.getActivity).mockResolvedValue(activity);
+    vi.mocked(workItemsApi.getComments).mockResolvedValue([]);
+    vi.mocked(workItemsApi.addComment).mockResolvedValue(comment);
     vi.mocked(categoriesApi.list).mockResolvedValue(categories);
     vi.mocked(usersApi.list).mockResolvedValue([
       { id: 'user-1', displayName: 'Ahmad' },
@@ -1048,4 +1072,155 @@ describe('WorkItemDetailPage', () => {
     expect(document.activeElement).toBe(trigger);
     expect(screen.getByRole('heading', { name: 'Saved title' })).toBeTruthy();
   });
+
+  it('allows commenting on readable legacy items without edit, status or assignment permissions', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.getById).mockResolvedValue({
+      ...item,
+      createdByUserId: null,
+      createdBy: null,
+      assigneeUserId: null,
+      assignee: null,
+      legacyAssigneeName: 'Historical owner',
+      permissions: noPermissions,
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    expect(screen.queryByRole('button', { name: 'Edit details' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move to In Progress' })).toBeNull();
+    await user.type(screen.getByRole('textbox', { name: 'Add a comment' }), comment.body);
+    await user.click(screen.getByRole('button', { name: 'Add comment' }));
+    await screen.findByText(comment.body);
+    expect(workItemsApi.addComment).toHaveBeenCalledWith(item.id, { body: comment.body });
+  });
+
+  it('refreshes CommentAdded activity after POST without fetching detail or altering the status expectedVersion', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.getActivity)
+      .mockResolvedValueOnce(activity)
+      .mockResolvedValueOnce([commentActivity, ...activity])
+      .mockResolvedValueOnce([commentActivity, ...activity]);
+    vi.mocked(workItemsApi.changeStatus).mockResolvedValue({
+      ...item,
+      version: 4,
+      status: 'InProgress',
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.type(screen.getByRole('textbox', { name: 'Add a comment' }), comment.body);
+    await user.click(screen.getByRole('button', { name: 'Add comment' }));
+    await screen.findByText(comment.body);
+    await waitFor(() => expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText(/Comment added/).length).toBe(2);
+    expect(workItemsApi.getById).toHaveBeenCalledTimes(1);
+    expect(workItemsApi.getComments).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
+      status: 'InProgress',
+      expectedVersion: 3,
+    });
+  });
+
+  it('preserves an open edit snapshot while a pending comment completes and submits the same expectedVersion', async () => {
+    const user = userEvent.setup();
+    let completeComment!: (result: WorkItemComment) => void;
+    vi.mocked(workItemsApi.addComment).mockReturnValue(
+      new Promise((resolve) => {
+        completeComment = resolve;
+      })
+    );
+    vi.mocked(workItemsApi.update).mockResolvedValue({
+      ...item,
+      title: 'Edit after comment',
+      version: 4,
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.type(
+      screen.getByRole('textbox', { name: 'Add a comment' }),
+      'Pending collaboration'
+    );
+    await user.click(screen.getByRole('button', { name: 'Add comment' }));
+    const trigger = screen.getByRole('button', { name: 'Edit details' });
+    expect(trigger).toHaveProperty('disabled', false);
+    await user.click(trigger);
+    await screen.findByRole('dialog');
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Edit after comment');
+    await act(async () => completeComment(comment));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByLabelText('Title')).toHaveProperty('value', 'Edit after comment');
+    expect(workItemsApi.getById).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await screen.findByRole('heading', { name: 'Edit after comment' });
+    expect(workItemsApi.update).toHaveBeenCalledWith(
+      item.id,
+      expect.objectContaining({ title: 'Edit after comment', expectedVersion: 3 })
+    );
+  });
+
+  it('keeps detail, status, assignment and editing usable when comments fail to load', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.getComments).mockRejectedValue(new Error('Comments offline.'));
+    vi.mocked(workItemsApi.getById).mockResolvedValue({
+      ...item,
+      permissions: adminPermissions,
+    });
+    renderDetail();
+    await screen.findByText('Comments offline.');
+    expect(screen.getByRole('heading', { name: item.title })).toBeTruthy();
+    expect(screen.getByText('Priority changed to High')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move to In Progress' })).toHaveProperty(
+      'disabled',
+      false
+    );
+    expect(screen.getByRole('button', { name: 'Change assignment' })).toHaveProperty(
+      'disabled',
+      false
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+
+  it.each([false, true])(
+    'does not apply an old route comment POST or refresh the next route activity (error: %s)',
+    async (fails) => {
+      const user = userEvent.setup();
+      let complete!: (result: WorkItemComment) => void;
+      let reject!: (error: Error) => void;
+      vi.mocked(workItemsApi.addComment).mockReturnValue(
+        new Promise((resolve, fail) => {
+          complete = resolve;
+          reject = fail;
+        })
+      );
+      vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
+        id === secondItem.id ? secondItem : item
+      );
+      renderDetail();
+      await screen.findByRole('heading', { name: item.title });
+      await user.type(
+        screen.getByRole('textbox', { name: 'Add a comment' }),
+        'Old item draft'
+      );
+      await user.click(screen.getByRole('button', { name: 'Add comment' }));
+      await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+      await screen.findByRole('heading', { name: secondItem.title });
+      const currentDraft = screen.getByRole('textbox', { name: 'Add a comment' });
+      await user.type(currentDraft, 'New item draft');
+      await act(async () => {
+        if (fails) reject(new Error('Old comment failed.'));
+        else complete(comment);
+      });
+      expect(screen.queryByText(comment.body)).toBeNull();
+      expect(screen.queryByText('Old comment failed.')).toBeNull();
+      expect(currentDraft).toHaveProperty('value', 'New item draft');
+      expect(screen.getByRole('button', { name: 'Add comment' })).toHaveProperty(
+        'disabled',
+        false
+      );
+      expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2);
+      expect(workItemsApi.getActivity).toHaveBeenLastCalledWith(secondItem.id);
+    }
+  );
 });
