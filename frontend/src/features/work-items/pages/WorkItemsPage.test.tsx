@@ -159,6 +159,28 @@ describe('WorkItemsPage', () => {
     });
   });
 
+  it('retains the name filter with explicit current and historical matching guidance', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.list).mockResolvedValue(page([item]));
+    renderPage('/work-items?page=3');
+    await screen.findAllByText(item.title);
+
+    const assigneeFilter = screen.getByRole('textbox', { name: 'Assignee' });
+    const hint = screen.getByText(
+      'Matches current display names and historical assignments.'
+    );
+    expect(assigneeFilter.getAttribute('aria-describedby')).toBe(hint.id);
+    await user.type(assigneeFilter, 'Ahmad');
+
+    await waitFor(() => {
+      expect(workItemsApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ assignee: 'Ahmad', page: 1 })
+      );
+      expect(screen.getByTestId('query-string').textContent).toContain('assignee=Ahmad');
+      expect(screen.getByTestId('query-string').textContent).not.toContain('page=3');
+    });
+  });
+
   it('requests the next server page and records it in the URL', async () => {
     const user = userEvent.setup();
     vi.mocked(workItemsApi.list).mockImplementation(

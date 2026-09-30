@@ -1,10 +1,17 @@
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/types/api';
-import { Category, WorkItem, WorkItemActivity } from '@/types/workItems';
+import {
+  Category,
+  WorkItem,
+  WorkItemActivity,
+  WorkItemPermissions,
+} from '@/types/workItems';
 import { categoriesApi, workItemsApi } from '@/lib/api/workItems';
+import { usersApi } from '@/lib/api/users';
+import { AuthContext, type AuthContextValue } from '@/features/auth/context';
 import { WorkItemDetailPage } from './WorkItemDetailPage';
 
 vi.mock('@/lib/api/workItems', () => ({
@@ -21,6 +28,37 @@ vi.mock('@/lib/api/workItems', () => ({
   },
 }));
 
+vi.mock('@/lib/api/users', () => ({ usersApi: { list: vi.fn() } }));
+
+const baselinePermissions: WorkItemPermissions = {
+  canEdit: true,
+  canChangeStatus: true,
+  canAssign: false,
+  canSelfAssign: false,
+  canUnassign: false,
+  canAssignOthers: false,
+};
+
+const noPermissions: WorkItemPermissions = {
+  canEdit: false,
+  canChangeStatus: false,
+  canAssign: false,
+  canSelfAssign: false,
+  canUnassign: false,
+  canAssignOthers: false,
+};
+
+const adminPermissions: WorkItemPermissions = {
+  canEdit: true,
+  canChangeStatus: true,
+  canAssign: true,
+  canSelfAssign: false,
+  canUnassign: true,
+  canAssignOthers: true,
+};
+
+let auth: AuthContextValue;
+
 const item: WorkItem = {
   id: 'item-42',
   version: 3,
@@ -34,7 +72,7 @@ const item: WorkItem = {
   assigneeUserId: 'user-1',
   createdBy: { id: 'user-1', displayName: 'Ahmad' },
   assignee: { id: 'user-1', displayName: 'Ahmad' },
-  permissions: null,
+  permissions: baselinePermissions,
   legacyAssigneeName: null,
   assigneeName: 'Ahmad',
   createdAtUtc: '2026-09-29T10:00:00Z',
@@ -90,19 +128,43 @@ const secondActivity: WorkItemActivity[] = [
 
 const renderDetail = () =>
   render(
-    <MemoryRouter initialEntries={[`/work-items/${item.id}`]}>
-      <Link to={`/work-items/${secondItem.id}`}>Open second work item</Link>
-      <Routes>
-        <Route path="/work-items/:id" element={<WorkItemDetailPage />} />
-      </Routes>
-    </MemoryRouter>
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter initialEntries={[`/work-items/${item.id}`]}>
+        <Link to={`/work-items/${secondItem.id}`}>Open second work item</Link>
+        <Routes>
+          <Route path="/work-items/:id" element={<WorkItemDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>
   );
 
 describe('WorkItemDetailPage', () => {
   beforeEach(() => {
+    auth = {
+      user: {
+        id: 'user-1',
+        email: 'member@example.test',
+        displayName: 'Ahmad',
+        roles: ['Member'],
+      },
+      accessToken: 'fake-test-session',
+      expiresAtUtc: '2099-01-01T00:00:00Z',
+      isAuthenticated: true,
+      isInitializing: false,
+      initializationError: null,
+      sessionExpired: false,
+      login: vi.fn(),
+      register: vi.fn(),
+      logout: vi.fn(),
+      retryInitialization: vi.fn(),
+    };
     vi.mocked(workItemsApi.getById).mockResolvedValue(item);
     vi.mocked(workItemsApi.getActivity).mockResolvedValue(activity);
     vi.mocked(categoriesApi.list).mockResolvedValue(categories);
+    vi.mocked(usersApi.list).mockResolvedValue([
+      { id: 'user-1', displayName: 'Ahmad' },
+      { id: 'user-2', displayName: 'Sara' },
+    ]);
   });
 
   it('renders activity newest first and uses the System actor fallback', async () => {
@@ -350,11 +412,12 @@ describe('WorkItemDetailPage', () => {
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
     await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
-    expect(
-      await screen.findByText('You do not have permission to perform this action.')
-    ).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toContain('permission');
     expect(screen.getByRole('heading', { name: item.title })).toBeTruthy();
     expect(workItemsApi.changeStatus).toHaveBeenCalledTimes(1);
+    expect(workItemsApi.getById).toHaveBeenCalledTimes(1);
+    expect(workItemsApi.getActivity).toHaveBeenCalledTimes(1);
+    expect(auth.logout).not.toHaveBeenCalled();
   });
 
   it('clears status and edit errors when opening another work item', async () => {
@@ -394,10 +457,9 @@ describe('WorkItemDetailPage', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('ignores late status and edit conflicts from the previous work item', async () => {
+  it('blocks concurrent editing during a status request and ignores its late conflict after navigation', async () => {
     const user = userEvent.setup();
     let rejectStatus: ((error: unknown) => void) | undefined;
-    let rejectEdit: ((error: unknown) => void) | undefined;
     vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
       id === secondItem.id ? secondItem : item
     );
@@ -406,34 +468,26 @@ describe('WorkItemDetailPage', () => {
         rejectStatus = reject;
       })
     );
-    vi.mocked(workItemsApi.update).mockReturnValue(
-      new Promise<WorkItem>((_, reject) => {
-        rejectEdit = reject;
-      })
-    );
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
     await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    expect(screen.getByRole('button', { name: 'Edit details' })).toHaveProperty(
+      'disabled',
+      true
+    );
     await user.click(screen.getByRole('button', { name: 'Edit details' }));
-    await user.clear(screen.getByLabelText('Title'));
-    await user.type(screen.getByLabelText('Title'), 'Pending first edit');
-    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
       status: 'InProgress',
       expectedVersion: 3,
     });
-    expect(workItemsApi.update).toHaveBeenCalledWith(
-      item.id,
-      expect.objectContaining({ title: 'Pending first edit', expectedVersion: 3 })
-    );
+    expect(workItemsApi.update).not.toHaveBeenCalled();
     await user.click(screen.getByRole('link', { name: 'Open second work item' }));
     expect(await screen.findByRole('heading', { name: secondItem.title })).toBeTruthy();
     await act(async () => {
       rejectStatus?.(new ApiError('Late status conflict from the first item.', 409));
-      rejectEdit?.(new ApiError('Late edit conflict from the first item.', 409));
     });
     expect(screen.queryByText('Late status conflict from the first item.')).toBeNull();
-    expect(screen.queryByText('Late edit conflict from the first item.')).toBeNull();
   });
 
   it.each(['status', 'edit'])(
@@ -521,18 +575,18 @@ describe('WorkItemDetailPage', () => {
     }
   );
 
-  it('shows current and historical assignees read-only without assignment controls', async () => {
+  it('prefers a real assignee over the historical snapshot without unauthorized assignment controls', async () => {
     vi.mocked(workItemsApi.getById).mockResolvedValue({
       ...item,
       legacyAssigneeName: 'Legacy display name',
     });
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
-    expect(screen.getByText('Current assignee:')).toHaveProperty(
+    expect(screen.getByText('Assigned to:')).toHaveProperty(
       'textContent',
-      'Current assignee: Ahmad'
+      'Assigned to: Ahmad'
     );
-    expect(screen.getByText('Historical assignee: Legacy display name')).toBeTruthy();
+    expect(screen.queryByText(/Historical assignment: Legacy display name/)).toBeNull();
     expect(screen.queryByLabelText('Assignee name')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Save assignment' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unassign' })).toBeNull();
@@ -550,8 +604,7 @@ describe('WorkItemDetailPage', () => {
     });
     renderDetail();
     await screen.findByRole('heading', { name: item.title });
-    expect(screen.getByText('Unassigned')).toBeTruthy();
-    expect(screen.getByText('Historical assignee: Ahmad')).toBeTruthy();
+    expect(screen.getByText('Historical assignment: Ahmad')).toBeTruthy();
   });
 
   it('renders the authenticated activity actor display name instead of their ID', async () => {
@@ -569,5 +622,430 @@ describe('WorkItemDetailPage', () => {
     });
     expect(activityList.textContent).toContain('Sara');
     expect(activityList.textContent).not.toContain('user-actor');
+  });
+
+  it.each([
+    {
+      name: 'Admin',
+      roles: ['Admin'],
+      permissions: adminPermissions,
+      edit: true,
+      status: true,
+      directory: true,
+      unassign: false,
+    },
+    {
+      name: 'creator Member',
+      roles: ['Member'],
+      permissions: baselinePermissions,
+      edit: true,
+      status: true,
+      directory: false,
+      unassign: false,
+    },
+    {
+      name: 'assigned Member',
+      roles: ['Member'],
+      permissions: { ...baselinePermissions, canAssign: true, canUnassign: true },
+      edit: true,
+      status: true,
+      directory: false,
+      unassign: true,
+    },
+    {
+      name: 'unrelated Member',
+      roles: ['Member'],
+      permissions: noPermissions,
+      edit: false,
+      status: false,
+      directory: false,
+      unassign: false,
+    },
+    {
+      name: 'Admin with denied server capabilities',
+      roles: ['Admin'],
+      permissions: noPermissions,
+      edit: false,
+      status: false,
+      directory: false,
+      unassign: false,
+    },
+    {
+      name: 'missing capability response',
+      roles: ['Admin'],
+      permissions: null,
+      edit: false,
+      status: false,
+      directory: false,
+      unassign: false,
+    },
+  ])(
+    'uses server capabilities for visible controls for $name',
+    async ({ roles, permissions, edit, status, directory, unassign }) => {
+      auth.user = { ...auth.user!, roles };
+      vi.mocked(workItemsApi.getById).mockResolvedValue({ ...item, permissions });
+      renderDetail();
+      await screen.findByRole('heading', { name: item.title });
+      expect(Boolean(screen.queryByRole('button', { name: 'Edit details' }))).toBe(edit);
+      expect(Boolean(screen.queryByRole('button', { name: 'Move to In Progress' }))).toBe(
+        status
+      );
+      expect(Boolean(screen.queryByRole('button', { name: 'Change assignment' }))).toBe(
+        directory
+      );
+      expect(Boolean(screen.queryByRole('button', { name: 'Unassign me' }))).toBe(
+        unassign
+      );
+      expect(usersApi.list).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText('Assignee name')).toBeNull();
+    }
+  );
+
+  it('does not derive permission from a legacy name matching the authenticated display name', async () => {
+    vi.mocked(workItemsApi.getById).mockResolvedValue({
+      ...item,
+      createdByUserId: null,
+      createdBy: null,
+      assigneeUserId: null,
+      assignee: null,
+      permissions: noPermissions,
+      legacyAssigneeName: 'Ahmad',
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    expect(screen.getByText(/Historical assignment: Ahmad/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit details' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move to In Progress' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assign to me' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change assignment' })).toBeNull();
+    expect(usersApi.list).not.toHaveBeenCalled();
+  });
+
+  it('uses the self-assignment response version 8 for the next status mutation', async () => {
+    const user = userEvent.setup();
+    const unassigned: WorkItem = {
+      ...item,
+      version: 7,
+      createdByUserId: 'creator-other',
+      createdBy: { id: 'creator-other', displayName: 'Creator' },
+      assigneeUserId: null,
+      assignee: null,
+      assigneeName: null,
+      permissions: { ...noPermissions, canAssign: true, canSelfAssign: true },
+    };
+    const assigned: WorkItem = {
+      ...unassigned,
+      version: 8,
+      assigneeUserId: 'user-1',
+      assignee: item.assignee,
+      assigneeName: 'Ahmad',
+      permissions: { ...baselinePermissions, canAssign: true, canUnassign: true },
+    };
+    vi.mocked(workItemsApi.getById).mockResolvedValue(unassigned);
+    vi.mocked(workItemsApi.assign).mockResolvedValue(assigned);
+    vi.mocked(workItemsApi.changeStatus).mockResolvedValue({
+      ...assigned,
+      version: 9,
+      status: 'InProgress',
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    expect(screen.queryByRole('button', { name: 'Edit details' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Assign to me' }));
+    await screen.findByRole('button', { name: 'Unassign me' });
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
+      assigneeUserId: 'user-1',
+      expectedVersion: 7,
+    });
+    await user.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    expect(workItemsApi.changeStatus).toHaveBeenCalledWith(item.id, {
+      status: 'InProgress',
+      expectedVersion: 8,
+    });
+    await screen.findByRole('button', { name: 'Move to Blocked' });
+    expect(usersApi.list).not.toHaveBeenCalled();
+  });
+
+  it('uses an Admin reassignment response version 9 for the next edit', async () => {
+    const user = userEvent.setup();
+    auth.user = { ...auth.user!, id: 'admin-user', roles: ['Admin'] };
+    const initial: WorkItem = { ...item, version: 8, permissions: adminPermissions };
+    const reassigned: WorkItem = {
+      ...initial,
+      version: 9,
+      assigneeUserId: 'user-2',
+      assignee: { id: 'user-2', displayName: 'Sara' },
+      assigneeName: 'Sara',
+    };
+    vi.mocked(workItemsApi.getById).mockResolvedValue(initial);
+    vi.mocked(workItemsApi.assign).mockResolvedValue(reassigned);
+    vi.mocked(workItemsApi.update).mockResolvedValue({
+      ...reassigned,
+      version: 10,
+      title: 'Saved after reassignment',
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Change assignment' }));
+    await user.selectOptions(await screen.findByLabelText('Assign to'), 'user-2');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+    expect(workItemsApi.assign).toHaveBeenCalledWith(item.id, {
+      assigneeUserId: 'user-2',
+      expectedVersion: 8,
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/Assigned to:/).textContent).toContain('Sara')
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Saved after reassignment');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(workItemsApi.update).toHaveBeenCalledWith(
+      item.id,
+      expect.objectContaining({ expectedVersion: 9 })
+    );
+    await screen.findByRole('heading', { name: 'Saved after reassignment' });
+  });
+
+  it('uses the returned unassignment response without incrementing the local version', async () => {
+    const user = userEvent.setup();
+    const assigned = {
+      ...item,
+      version: 7,
+      permissions: { ...baselinePermissions, canAssign: true, canUnassign: true },
+    };
+    const unassigned: WorkItem = {
+      ...assigned,
+      version: 11,
+      assigneeUserId: null,
+      assignee: null,
+      assigneeName: null,
+      permissions: { ...baselinePermissions, canAssign: true, canSelfAssign: true },
+    };
+    vi.mocked(workItemsApi.getById).mockResolvedValue(assigned);
+    vi.mocked(workItemsApi.assign)
+      .mockResolvedValueOnce(unassigned)
+      .mockResolvedValueOnce({ ...assigned, version: 12 });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Unassign me' }));
+    await screen.findByRole('button', { name: 'Assign to me' });
+    expect(workItemsApi.assign).toHaveBeenNthCalledWith(1, item.id, {
+      assigneeUserId: null,
+      expectedVersion: 7,
+    });
+    await user.click(screen.getByRole('button', { name: 'Assign to me' }));
+    expect(workItemsApi.assign).toHaveBeenNthCalledWith(2, item.id, {
+      assigneeUserId: 'user-1',
+      expectedVersion: 11,
+    });
+  });
+
+  it.each([403, 409])(
+    'keeps the item and matching session after an assignment %s without automatic refresh or retry',
+    async (status) => {
+      const user = userEvent.setup();
+      const unassigned = {
+        ...item,
+        assigneeUserId: null,
+        assignee: null,
+        assigneeName: null,
+        permissions: { ...baselinePermissions, canAssign: true, canSelfAssign: true },
+      };
+      vi.mocked(workItemsApi.getById).mockResolvedValue(unassigned);
+      vi.mocked(workItemsApi.assign).mockRejectedValue(
+        new ApiError(
+          status === 403
+            ? 'You do not have permission to perform this action.'
+            : 'This work item was modified by another request. Refresh it and try again.',
+          status,
+          status === 409 ? { title: 'Work Item Concurrency Conflict' } : undefined
+        )
+      );
+      renderDetail();
+      await screen.findByRole('heading', { name: item.title });
+      await user.click(screen.getByRole('button', { name: 'Assign to me' }));
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        status === 403 ? 'permission' : 'Refresh'
+      );
+      expect(screen.getByRole('heading', { name: item.title })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Assign to me' })).toHaveProperty(
+        'disabled',
+        false
+      );
+      expect(workItemsApi.assign).toHaveBeenCalledTimes(1);
+      expect(workItemsApi.getById).toHaveBeenCalledTimes(1);
+      expect(workItemsApi.getActivity).toHaveBeenCalledTimes(1);
+      expect(auth.logout).not.toHaveBeenCalled();
+      expect(auth.isAuthenticated).toBe(true);
+    }
+  );
+
+  it('prevents rapid assignment and status interactions from sending concurrent mutations', async () => {
+    const unassigned = {
+      ...item,
+      assigneeUserId: null,
+      assignee: null,
+      permissions: { ...baselinePermissions, canAssign: true, canSelfAssign: true },
+    };
+    vi.mocked(workItemsApi.getById).mockResolvedValue(unassigned);
+    vi.mocked(workItemsApi.assign).mockReturnValue(new Promise(() => undefined));
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    const assignment = screen.getByRole('button', { name: 'Assign to me' });
+    fireEvent.click(assignment);
+    fireEvent.click(assignment);
+    fireEvent.click(screen.getByRole('button', { name: 'Move to In Progress' }));
+    expect(workItemsApi.assign).toHaveBeenCalledTimes(1);
+    expect(workItemsApi.changeStatus).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Edit details' })).toHaveProperty(
+      'disabled',
+      true
+    );
+  });
+
+  it('ignores an old assignment response after opening another work item', async () => {
+    const user = userEvent.setup();
+    let resolveAssignment: ((updated: WorkItem) => void) | undefined;
+    const first: WorkItem = {
+      ...item,
+      assigneeUserId: null,
+      assignee: null,
+      permissions: { ...baselinePermissions, canAssign: true, canSelfAssign: true },
+    };
+    vi.mocked(workItemsApi.getById).mockImplementation(async (id) =>
+      id === secondItem.id ? secondItem : first
+    );
+    vi.mocked(workItemsApi.assign).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAssignment = resolve;
+      })
+    );
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Assign to me' }));
+    await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+    await screen.findByRole('heading', { name: secondItem.title });
+    await act(async () =>
+      resolveAssignment?.({
+        ...first,
+        title: 'Late first assignment response',
+        version: 10,
+        assignee: item.assignee,
+        assigneeUserId: 'user-1',
+      })
+    );
+    expect(screen.getByRole('heading', { name: secondItem.title })).toBeTruthy();
+    expect(screen.queryByText('Late first assignment response')).toBeNull();
+    expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not expose a previous route user directory result on the next item', async () => {
+    const user = userEvent.setup();
+    let resolveUsers:
+      ((users: { id: string; displayName: string }[]) => void) | undefined;
+    vi.mocked(workItemsApi.getById).mockImplementation(async (id) => ({
+      ...(id === secondItem.id ? secondItem : item),
+      permissions: adminPermissions,
+    }));
+    vi.mocked(usersApi.list)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveUsers = resolve;
+        })
+      )
+      .mockResolvedValueOnce([
+        { id: 'fresh-user', displayName: 'Current directory user' },
+      ]);
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    await user.click(screen.getByRole('button', { name: 'Change assignment' }));
+    expect(screen.getByText('Loading users…')).toBeTruthy();
+    await user.click(screen.getByRole('link', { name: 'Open second work item' }));
+    await screen.findByRole('heading', { name: secondItem.title });
+    await user.click(screen.getByRole('button', { name: 'Change assignment' }));
+    await screen.findByRole('option', { name: 'Current directory user' });
+    await act(async () =>
+      resolveUsers?.([{ id: 'stale-user', displayName: 'Stale directory user' }])
+    );
+    expect(screen.queryByRole('option', { name: 'Stale directory user' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'Current directory user' })).toBeTruthy();
+  });
+
+  it.each([false, true])(
+    'traps keyboard focus and restores Edit details after Escape (activity completes while open: %s)',
+    async (completeActivityWhileOpen) => {
+      const user = userEvent.setup();
+      // jsdom has no layout; make visible controls measurable for the focus trap.
+      vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([
+        new DOMRect(),
+      ] as unknown as DOMRectList);
+      let resolveActivity: ((events: WorkItemActivity[]) => void) | undefined;
+      if (completeActivityWhileOpen)
+        vi.mocked(workItemsApi.getActivity).mockReturnValue(
+          new Promise((resolve) => {
+            resolveActivity = resolve;
+          })
+        );
+      renderDetail();
+      await screen.findByRole('heading', { name: item.title });
+      const trigger = screen.getByRole('button', { name: 'Edit details' });
+      for (let step = 0; step < 10 && document.activeElement !== trigger; step++)
+        await user.tab();
+      expect(document.activeElement).toBe(trigger);
+      await user.keyboard('{Enter}');
+      await screen.findByRole('dialog', { name: 'Edit work item details' });
+      const close = screen.getByRole('button', { name: 'Close dialog' });
+      expect(document.activeElement).toBe(close);
+      await user.keyboard('{Shift>}{Tab}{/Shift}');
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Save changes' })
+      );
+      await user.tab();
+      expect(document.activeElement).toBe(close);
+      await user.tab();
+      expect(document.activeElement).toBe(screen.getByLabelText('Title'));
+      if (completeActivityWhileOpen) {
+        await act(async () => resolveActivity?.(activity));
+        expect(document.activeElement).toBe(screen.getByLabelText('Title'));
+      }
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    }
+  );
+
+  it('restores edit trigger focus after saving and completing a delayed activity refresh', async () => {
+    const user = userEvent.setup();
+    let resolveActivity: ((events: WorkItemActivity[]) => void) | undefined;
+    vi.mocked(workItemsApi.getActivity)
+      .mockResolvedValueOnce(activity)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveActivity = resolve;
+        })
+      );
+    vi.mocked(workItemsApi.update).mockResolvedValue({
+      ...item,
+      title: 'Saved title',
+      version: 4,
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: item.title });
+    const trigger = screen.getByRole('button', { name: 'Edit details' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('dialog');
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'Saved title');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(workItemsApi.getActivity).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(trigger.hasAttribute('disabled')).toBe(true);
+    await act(async () => resolveActivity?.(activity));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(trigger.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByRole('heading', { name: 'Saved title' })).toBeTruthy();
   });
 });
