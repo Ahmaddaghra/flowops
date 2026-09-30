@@ -9,6 +9,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -18,6 +19,7 @@ export const Modal: React.FC<ModalProps> = ({
   description,
   children,
   className,
+  triggerRef,
 }) => {
   const titleId = useId();
   const descriptionId = useId();
@@ -28,6 +30,7 @@ export const Modal: React.FC<ModalProps> = ({
     if (!isOpen) return;
 
     const previousFocus = document.activeElement as HTMLElement | null;
+    const trigger = triggerRef?.current;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -71,9 +74,10 @@ export const Modal: React.FC<ModalProps> = ({
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
-      if (previousFocus?.isConnected) previousFocus.focus();
+      const focusTarget = trigger ?? previousFocus;
+      if (focusTarget?.isConnected) focusTarget.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, triggerRef]);
 
   if (!isOpen) return null;
 
