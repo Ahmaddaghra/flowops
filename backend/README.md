@@ -1,6 +1,6 @@
 # FlowOps Backend
 
-The backend is a .NET 10 Web API organized into Domain, Application, Infrastructure, and API projects. PostgreSQL stores both work items and ASP.NET Core Identity data. Domain stays independent of Identity; Application uses app-level identity/current-user abstractions and does not reference EF Core or Identity. The reviewed Stage 4A/4B foundation provides JWT authentication and server-side work item authorization. Stage 4C's authenticated frontend and Stage 4D's capability-driven assignment/edit/status controls consume these existing contracts. Comments and remaining Phase 4 QA artifacts are deferred.
+The backend is a .NET 10 Web API organized into Domain, Application, Infrastructure, and API projects. PostgreSQL stores work items, comments, and ASP.NET Core Identity data. Domain stays independent of Identity; Application uses app-level identity/current-user abstractions and does not reference EF Core or Identity. The reviewed Stage 4A/4B foundation provides JWT authentication and server-side work item authorization. Stage 4C's authenticated frontend and Stage 4D's capability-driven assignment/edit/status controls consume these existing contracts. Stage 4E adds authenticated comments and atomic comment/activity persistence. Remaining Phase 4 QA artifacts are deferred.
 
 ## Authentication configuration
 
@@ -66,6 +66,12 @@ dotnet test backend/tests/FlowOps.IntegrationTests/FlowOps.IntegrationTests.cspr
 Use a disposable test database; the integration fixture creates and drops schemas in the configured database. GitHub Actions provisions PostgreSQL 17 for this job. Integration tests inject deterministic test-only JWT configuration and create their own users/roles; no developer JWT key, admin seed, or GitHub secret is required.
 
 The historical Stage 4A/4B checkpoint passed 80 unit tests and 100 PostgreSQL integration cases. Stage 4C's final legacy-authorization correction passed 82 unit tests and 102 PostgreSQL integration cases, with restore, formatting, and full build passing without warnings/errors. Stage 4D changes no backend code and reran the same 82 unit/102 PostgreSQL integration cases successfully, with no failures or skips and the same clean quality gates. Migration verification preserved six existing Phase 3 work items and 15 activity events through up/down-to-Phase-3/up in a disposable copy of the development database. The source database was untouched; detailed evidence is in the [Phase 4 checkpoint](../docs/phases/phase-4-auth-collaboration-qa.md).
+
+## Stage 4E comments verification
+
+Stage 4E passes all 110 unit tests and 133 PostgreSQL integration cases, adding 28 unit and 31 integration cases to the approved Stage 4D baseline. Restore, whole-solution formatting verification, and build pass with zero warnings/errors and no failed/skipped tests. The additive `20260930092502_AddWorkItemComments` migration passes Stage 4D → latest → Stage 4D → latest verification with existing work items, versions, activity, users, roles, and assignment references preserved. Rolling it down discards Stage 4E comments. Fault-injection tests prove comment and activity inserts roll back together in PostgreSQL.
+
+`GET` and `POST /api/v1/work-items/{id}/comments` use the existing authenticated Admin/Member read boundary. POST accepts only `body`, trims it, rejects blank or over-2000-character input, derives authorship from the current user, and saves `CommentAdded` with the comment once. Comments are oldest-first and expose safe ID/display-name author summaries. They leave WorkItem version and updated timestamp unchanged and require no expectedVersion. Issued JWT claims retain the existing expiry semantics; deactivation is checked by login and `/auth/me`, without a new per-comment account check or revocation service.
 
 ## API
 

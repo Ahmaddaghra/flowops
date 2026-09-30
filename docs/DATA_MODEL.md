@@ -1,6 +1,6 @@
 # Data Model
 
-This page records the schema through the Phase 4 Stage 4A/4B backend checkpoint. Existing Phase 3 migrations remain unchanged: `20260929140705_AddWorkItemLifecycle` adds categories, activity history, and lifecycle query indexes; `20260929163759_AddWorkItemConcurrency` adds the concurrency token. The additive `20260929223011_AddIdentityFoundation` and `20260929223344_AddUserBackedWorkItems` migrations introduce identity and real user references without removing existing work items or activity.
+This page records the schema through the Phase 4 Stage 4E comments checkpoint. Existing Phase 3 migrations remain unchanged: `20260929140705_AddWorkItemLifecycle` adds categories, activity history, and lifecycle query indexes; `20260929163759_AddWorkItemConcurrency` adds the concurrency token. The additive `20260929223011_AddIdentityFoundation` and `20260929223344_AddUserBackedWorkItems` migrations introduce identity and real user references without removing existing work items or activity. The additive `20260930092502_AddWorkItemComments` migration creates Comments without changing prior migrations or existing application/Identity rows.
 
 ## Identity users and roles
 
@@ -13,7 +13,7 @@ User IDs and display names may appear in safe DTOs; email and role information a
 ## WorkItem
 
 - `Id` — GUID primary key
-- `Version` — non-null `long`, starts at `1`; increments on each meaningful mutation and is an EF Core concurrency token
+- `Version` — non-null `long`, starts at `1`; increments on each meaningful lifecycle mutation and is an EF Core concurrency token
 - `Title` — required, trimmed, maximum 200 characters
 - `Description` — nullable, maximum 4,000 characters
 - `Status` — `Todo`, `InProgress`, `Blocked`, or `Done`; defaults to `Todo`
@@ -27,6 +27,20 @@ User IDs and display names may appear in safe DTOs; email and role information a
 Status transitions are enforced in the domain entity. The exact matrix has no self-transitions, and `Done` is terminal. Nullable ownership/assignment IDs preserve older records, while new items always receive the authenticated creator's ID. Infrastructure configures user foreign keys without introducing Identity types into Domain. EF Core uses the originally loaded `Version` in each update predicate; a stale concurrent mutation affects zero rows and becomes an application-level conflict rather than a last-write-wins update.
 
 Existing `AssigneeName` values are preserved exactly as historical data. No migration tries to infer user relationships by matching names. A real Phase 4 assignment updates `AssigneeUserId` and leaves the historical snapshot intact. Responses expose that snapshot as `legacyAssigneeName`; the compatibility `assigneeName` field resolves a current assignee display name first and otherwise falls back to the snapshot. After a real assignee is removed the snapshot may still be displayed as historical text. Only user IDs and roles determine permissions.
+
+Comments do not mutate the WorkItem aggregate fields. Adding one leaves both `Version` and `UpdatedAtUtc` unchanged and requires no expectedVersion.
+
+## Comment
+
+- `Id` — generated GUID primary key
+- `WorkItemId` — required GUID foreign key to WorkItem; cascade deletion
+- `AuthorUserId` — required GUID foreign key to ApplicationUser; author deletion restricted
+- `Body` — required plain text, maximum 2000 characters before trimming; blank/whitespace-only rejected, outer whitespace trimmed, internal newlines preserved
+- `CreatedAtUtc` — server-owned UTC timestamp
+
+Domain stores scalar GUID references without Identity navigation properties. The API derives the author from `ICurrentUser.UserId` and the item from the route, never request identity. Infrastructure configures the two foreign keys, an index on `(WorkItemId, CreatedAtUtc)`, and the conventional author foreign-key index. GET explicitly orders timestamp then ID ascending. Response authors expose only ID/display name, resolved in one batch with `User unavailable` fallback.
+
+Each new Comment and its authenticated `CommentAdded` ActivityEvent are staged and saved once in the same EF transaction. A failed insertion of either leaves neither persisted. No editing, deletion, replies, reactions, mentions, attachments, or rich text model is included.
 
 ## Category
 
@@ -42,12 +56,12 @@ The migration seeds Operations, Support, Engineering, and Billing using stable I
 
 - `Id` — GUID primary key
 - `WorkItemId` — required foreign key; events cascade-delete with the work item
-- `ActorUserId` — nullable GUID foreign key to `ApplicationUser`, delete restricted; populated from authenticated context for new lifecycle events
-- `EventType` — `Created`, `TitleChanged`, `DescriptionChanged`, `PriorityChanged`, `CategoryChanged`, `StatusChanged`, or `AssignmentChanged`
+- `ActorUserId` — nullable GUID foreign key to `ApplicationUser`, delete restricted; populated from authenticated context for new lifecycle/comment events
+- `EventType` — `Created`, `TitleChanged`, `DescriptionChanged`, `PriorityChanged`, `CategoryChanged`, `StatusChanged`, `AssignmentChanged`, or `CommentAdded`
 - `Description` — required human-readable event text, maximum 1,000 characters
 - `CreatedAtUtc` — UTC timestamp
 
-An index on `(WorkItemId, CreatedAtUtc)` supports the newest-first activity endpoint. Lifecycle writes save the changed item and its events together in one database transaction. Permission checks happen before expected-version checks and before mutation or event staging. A forbidden request or client version mismatch changes nothing, stages no event, and skips saving. If the EF version check fails during saving, the transaction rolls back both the WorkItem mutation and staged activity. Response mapping resolves safe `actor` summaries and `actorDisplayName`; legacy events with null actors retain the `System` fallback. Historical actor data is not rewritten.
+An index on `(WorkItemId, CreatedAtUtc)` supports the newest-first activity endpoint. Lifecycle writes save the changed item and its events together in one database transaction. Permission checks happen before expected-version checks and before mutation or event staging. A forbidden request or client version mismatch changes nothing, stages no event, and skips saving. If the EF version check fails during saving, the transaction rolls back both the WorkItem mutation and staged activity. Response mapping resolves safe `actor` summaries and `actorDisplayName`; legacy events with null actors retain the `System` fallback. Historical actor data is not rewritten. CommentAdded uses description `Comment added` without body duplication and saves atomically with the Comment, leaving WorkItem fields untouched.
 
 ## Relationships and persistence notes
 
@@ -57,6 +71,8 @@ ApplicationUser 1 ─── 0..* WorkItem (creator)
 ApplicationUser 1 ─── 0..* WorkItem (assignee)
 WorkItem 1 ─── 0..* ActivityEvent
 ApplicationUser 1 ─── 0..* ActivityEvent (actor)
+WorkItem 1 ─── 0..* Comment
+ApplicationUser 1 ─── 0..* Comment (author)
 ```
 
 - A work item can have zero or one category; deleting a referenced category is restricted.
@@ -68,6 +84,8 @@ ApplicationUser 1 ─── 0..* ActivityEvent (actor)
 - `AddIdentityFoundation` adds the GUID Identity schema and deterministic roles. `AddUserBackedWorkItems` adds nullable ownership/assignment IDs and user foreign keys/indexes for creator, assignee, and existing activity actor IDs. All three user relationships restrict deletion of referenced accounts. Neither migration rewrites Phase 3 data or migration history. Verification evidence is recorded in the [Phase 4 checkpoint](phases/phase-4-auth-collaboration-qa.md).
 - A rollback from the ownership migration removes the new relationship columns, so it loses Phase 4 ownership/assignment references; original work item fields, legacy assignment snapshots, and activity history remain. Rolling back the Identity migration removes accounts and roles. Use a disposable database for migration down/up verification, and preserve a backup before rolling back a database containing real Phase 4 users.
 
-## Deferred entities
+- `AddWorkItemComments` creates only the Comments table, its foreign keys, and indexes. Stage 4D → latest → Stage 4D → latest PostgreSQL tests preserve work items, versions, timestamps, activity, users, roles/memberships, categories, and creator/assignee IDs. Down drops Comments and therefore destroys Stage 4E comment data; applying Up again creates an empty table. Verification uses disposable schemas/databases and does not alter development data.
 
-Comments remain pending Stage 4E. The intended model has a work item ID, authenticated author ID, required trimmed body, and UTC creation timestamp, with comment/activity writes saved atomically and no work item version increment for a comment alone. No comment table or comment endpoint is part of Stage 4A/4B. Dashboard data belongs to Phase 5.
+## Deferred scope
+
+Stage 4E includes no comment editing/deletion/replies or real-time collaboration. Expanded QA artifacts remain Stage 4F work, and dashboard data belongs to Phase 5.

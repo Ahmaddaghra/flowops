@@ -19,6 +19,8 @@ The API is rooted at `/api/v1`. Request and response bodies use JSON. Swagger UI
 | `POST` | `/api/v1/work-items/{id}/status` | Authorized status transition | `200`, `400`, `401`, `403`, `404`, `409` |
 | `POST` | `/api/v1/work-items/{id}/assign` | Assigns/unassigns a real user under the assignment policy | `200`, `400`, `401`, `403`, `404`, `409` |
 | `GET` | `/api/v1/work-items/{id}/activity` | Lists newest-first activity with safe actor summaries | `200`, `401`, `404` |
+| `GET` | `/api/v1/work-items/{id}/comments` | Lists oldest-first comments with safe author summaries | `200`, `401`, `404` |
+| `POST` | `/api/v1/work-items/{id}/comments` | Adds an authenticated comment and its activity atomically | `201`, `400`, `401`, `404` |
 
 ### Authentication
 
@@ -47,14 +49,15 @@ Protected calls send `Authorization: Bearer <accessToken>`. Missing, expired, or
 
 | Operation | Admin | Member |
 |---|---|---|
-| Read items, categories, and activity | Allowed | Allowed |
+| Read items, categories, activity, and comments | Allowed | Allowed |
+| Add comments to a readable item | Allowed | Allowed |
 | Create | Allowed; current user is creator | Allowed; current user is creator |
 | Edit details or change status | Any item | Creator or current user assignee |
 | Assign an unassigned item | Any active user | Self only when the item has a creator user ID |
 | Reassign an assigned item | Any active user | Forbidden |
 | Unassign | Any item | Only an item currently assigned to self |
 
-A legacy item with both `createdByUserId` and `assigneeUserId` null permits every work item mutation, including assignment, only by Admin. A Member cannot self-assign it. After an Admin legitimately assigns an active user, that assignee gains ordinary assignee permissions. If the assignment is removed while the creator remains null, the Admin-only boundary applies again. A legacy display-name match never grants ownership. Any existing-item mutation requires `expectedVersion`.
+A legacy item with both `createdByUserId` and `assigneeUserId` null permits lifecycle edits, status changes, and assignment only by Admin. A Member cannot self-assign it. After an Admin legitimately assigns an active user, that assignee gains ordinary assignee permissions. If the assignment is removed while the creator remains null, the Admin-only boundary applies again. A legacy display-name match never grants ownership. Existing-item lifecycle mutations require `expectedVersion`. Comments follow the authenticated read boundary, including for legacy items, and require no expectedVersion.
 
 Work item responses include nullable `createdByUserId` and `assigneeUserId`, nullable `createdBy`/`assignee` summaries (`id`, `displayName`), and server-computed `permissions`: `canEdit`, `canChangeStatus`, `canAssign`, `canSelfAssign`, `canUnassign`, and `canAssignOthers`. These flags guide UX; the server rechecks every mutation. `legacyAssigneeName` preserves the old Phase 3 snapshot. Compatibility field `assigneeName` resolves the current user's display name first, otherwise the legacy snapshot; it is not an authorization input and may show historical text even after a user-backed assignment is later removed.
 
@@ -139,6 +142,41 @@ The shared detail/list display shows a current assignee's real name first, Assig
 
 The server enforces transitions and returns `409 Conflict` for a transition that violates these rules. Self-transitions are invalid, including `Done` → `Done`. The UI requests the transition; it does not define the authoritative rule.
 
+### Work item comments
+
+`GET /api/v1/work-items/{id}/comments` returns an array, including `[]` for an existing item with no comments. Ordering is explicitly `CreatedAtUtc ASC`, then `Id ASC`. All authenticated Admin/Member callers can read and comment on every currently readable work item; creator/assignee capabilities and the legacy lifecycle restriction do not gate comments.
+
+`POST /api/v1/work-items/{id}/comments` accepts exactly:
+
+```json
+{ "body": "Investigated the customer report." }
+```
+
+Body is required, must not be whitespace-only, and may contain at most 2000 characters before trimming leading/trailing whitespace. Internal newlines are preserved. The strict DTO rejects unknown fields with `400`, including `authorUserId`, `author`, `createdAtUtc`, `role`, `workItemId`, and `expectedVersion`. The resource ID comes from the route, authorship from `ICurrentUser.UserId`, and timestamp from server UTC time.
+
+POST returns `201` and a Location for the item's comments GET, with this safe shape:
+
+```json
+{
+  "id": "30000000-0000-0000-0000-000000000001",
+  "workItemId": "40000000-0000-0000-0000-000000000001",
+  "body": "Investigated the customer report.",
+  "createdAtUtc": "2026-09-30T12:00:00Z",
+  "author": {
+    "id": "20000000-0000-0000-0000-000000000001",
+    "displayName": "Member"
+  }
+}
+```
+
+Author summaries contain only ID and display name, with `User unavailable` if a summary cannot be resolved. Lists batch distinct author IDs through the existing user-directory abstraction. No email, roles, or Identity security fields are exposed. Inactive historical authors retain their names through that directory.
+
+One `SaveChangesAsync` persists the comment and `CommentAdded` activity in one EF transaction. The event uses the current user's actor ID and description `Comment added`; it never copies the body. A failure persists neither row. Adding a comment leaves `WorkItem.Version` and `UpdatedAtUtc` unchanged, so an edit opened at version N can still submit N after another user comments. POST has no expectedVersion check and introduces no ordinary-comment `409` response.
+
+Anonymous/invalid-session calls return `401`, missing items return `404`, and invalid bodies return `400` Problem Details. The existing read policy permits both roles, so ordinary Admin/Member comment calls do not introduce a creator/assignee `403`. Existing JWT semantics remain: issued valid claims authorize work item reads until expiry; login and `/auth/me` check account activity. Comments add no account-state workaround or token revocation.
+
+The UI appends the returned comment and refreshes Activity without reloading detail. Comments support loading, empty, isolated error/retry, and submitting states, retained failed drafts, accessible validation, and route-scoped stale-response guards. Bodies render as escaped plain text. No comment editing, deletion, replies, reactions, mentions, attachments, rich text, notifications, or real-time transport are implemented.
+
 ### Error responses
 
 Errors use RFC 7807 Problem Details with `application/problem+json`. Data annotation and query validation failures return `400` with field errors. Missing work items, categories, or assignment targets return `404`. Invalid lifecycle transitions return `409` with title `Invalid Work Item Transition`. Authentication failures return `401`; authenticated permission failures return `403`. No error exposes stack traces or Identity security metadata.
@@ -149,8 +187,8 @@ Both conflicts return `409` with title `Work Item Concurrency Conflict` and deta
 
 ### Activity history
 
-Create, title, description, priority, category, status, and assignment changes produce activity events in the same `SaveChanges` as the associated work item change. An `expectedVersion` mismatch stages no mutation or event and does not call `SaveChanges`. EF Core's transaction rolls back both the mutation and staged activity when a race fails the database version check; a stale request cannot leave a ghost event. No-op descriptive updates do not add events. New events take `actorUserId` from authenticated context and include an `actor` summary (`id`, `displayName`) plus `actorDisplayName` in responses. Legacy events retain null actors and `actorDisplayName: "System"`; historical events are not rewritten.
+Create, title, description, priority, category, status, and assignment changes produce activity events in the same `SaveChanges` as the associated work item change. An `expectedVersion` mismatch stages no mutation or event and does not call `SaveChanges`. EF Core's transaction rolls back both the mutation and staged activity when a race fails the database version check; a stale request cannot leave a ghost event. No-op descriptive updates do not add events. New events take `actorUserId` from authenticated context and include an `actor` summary (`id`, `displayName`) plus `actorDisplayName` in responses. Legacy events retain null actors and `actorDisplayName: "System"`; historical events are not rewritten. Comment creation also records `CommentAdded` in the same save as its Comment, with authenticated actor and `Comment added` description; the work item itself is not mutated.
 
 ## Scope deferred to later phases
 
-The reviewed Stage 4A/4B backend foundation is used by Stage 4C's authenticated React client and Stage 4D's capability-driven assignment/edit/status controls. Client route/session guards provide UX; the backend remains authoritative for authentication and every operation's permissions. Mutation `403` preserves authentication and current item state, with a visible permission error and no automatic refresh. A stale `409` requires manual refresh/review and never retries automatically. Protected `401` retains the centralized matching-session invalidation behavior. Stage 4D is completed and verified. Comment persistence/API, expanded authenticated Postman workflows, and remaining manual QA/traceability artifacts are pending later Phase 4 stages. The Postman collection still represents the Phase 3 unauthenticated workflow. Dashboard summaries belong to Phase 5.
+The reviewed Stage 4A/4B backend foundation is used by Stage 4C's authenticated React client and Stage 4D's capability-driven assignment/edit/status controls. Client route/session guards provide UX; the backend remains authoritative for authentication and every operation's permissions. Mutation `403` preserves authentication and current item state, with a visible permission error and no automatic refresh. A stale `409` requires manual refresh/review and never retries automatically. Protected `401` retains the centralized matching-session invalidation behavior. Stage 4E comments are completed and verified. Expanded authenticated Postman workflows and remaining manual QA/traceability artifacts are pending Stage 4F. The Postman collection still represents the Phase 3 unauthenticated workflow. Dashboard summaries belong to Phase 5.

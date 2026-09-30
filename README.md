@@ -9,9 +9,9 @@ FlowOps is being built to help small teams create, assign, prioritize, track, an
 - **Phase 1 — Backend Foundation (Completed & Verified)**
 - **Phase 2 — Frontend Foundation & Design System (Completed & Verified)**
 - **Phase 3 — Work Item Lifecycle (Completed & Verified)**
-- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4D completed and verified)**
+- **Phase 4 — Authentication, Collaboration & QA (In Progress; Stage 4E completed and verified)**
 
-The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C adds the authenticated React shell, login/register, protected routes, and session handling. Stage 4D implements real user assignment and permission-aware work item controls using server capabilities; its automated and real-identity browser checks pass. Comments and expanded QA artifacts remain pending, and the Postman collection still needs its Phase 4 auth update. Stage 4E has not started.
+The reviewed Stage 4A/4B foundation provides Identity/JWT authentication and server-side work item authorization. Stage 4C adds the authenticated React shell, login/register, protected routes, and session handling. Stage 4D implements real user assignment and permission-aware work item controls using server capabilities. Stage 4E adds persisted comments with authenticated authors, atomic activity recording, and responsive UI. Automated and real-identity browser checks pass. Expanded QA artifacts and the Postman auth update remain pending Stage 4F.
 
 ### Tech Stack Summary
 
@@ -133,7 +133,7 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Dashboard placeholder, settings/system status page, and not-found page
 - [x] Frontend CI workflow (ESLint, Prettier, Vitest, TypeScript compilation, Vite build)
 
-### Phase 4 Stages 4A–4D
+### Phase 4 Stages 4A–4E
 - [x] ASP.NET Core Identity in the existing PostgreSQL database, JWT register/login/me, and authenticated user directory
 - [x] Admin/Member roles and server-side creator/assignee authorization
 - [x] User-backed ownership and assignment, preserved legacy assignment snapshots, and authenticated activity actors
@@ -144,13 +144,15 @@ FlowOps uses GitHub Actions for automated quality gates on every push and pull r
 - [x] Work item create/detail compatibility and actor display names
 - [x] Capability-driven edit/status controls and user-backed assignment with preserved server versions
 - [x] Lazy active-user selection for Admin assignment, permitted Member self-assignment/unassignment, and clearly labelled historical names
+- [x] Persisted plain-text comments with JWT-derived authors, safe summaries, deterministic ordering, and atomic CommentAdded activity
+- [x] Independent comments loading/empty/error/retry/submission states, route-race guards, and unchanged work item versions
 
-Legacy work items with both creator and user assignee IDs null require Admin for every work item mutation, including assignment. A Member gains assignee rights only after an Admin legitimately assigns that item; historical display-name text never grants permission. Stage 4C's final preflight tightened this boundary without adding assignment UI.
+Legacy work items with both creator and user assignee IDs null require Admin for lifecycle edits, status changes, and assignment. A Member gains assignee rights only after an Admin legitimately assigns that item; historical display-name text never grants permission. Stage 4C's final preflight tightened this boundary without adding assignment UI. Comments follow the authenticated read boundary: any Admin or Member can comment on a readable item, including a legacy item, without changing its version or updated timestamp.
 
-Stage 4D is completed and verified: 166 frontend tests, 82 backend unit tests, 102 PostgreSQL integration cases, and 23 real-identity browser checks pass. Formatting, lint, and builds pass. See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for the authorization matrix, additive migrations, auth session model, assignment flows, historical verification evidence, and remaining work.
+Stage 4E is completed and verified: 204 frontend tests, 110 backend unit tests, 133 PostgreSQL integration cases, and 20 real-identity browser checks pass. Formatting, lint, and builds pass. The approved Stage 4D baseline was 166/82/102 tests and 23 browser checks. See [Phase 4 checkpoint](docs/phases/phase-4-auth-collaboration-qa.md) for comments contracts, authorization, additive migrations, concurrency, historical evidence, and remaining work. Comment editing, deletion, and replies are outside this stage.
 
 ### Planned (Remaining Phase 4 and Future Phases)
-- [ ] Work item comments, expanded Postman workflows, manual QA, bug reports, and traceability (Phase 4)
+- [ ] Expanded Postman workflows, manual QA, bug reports, and traceability (Phase 4)
 - [ ] Workload summary dashboard & metrics (Phase 5)
 
 ---

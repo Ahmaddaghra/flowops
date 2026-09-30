@@ -1,10 +1,10 @@
 # Phase 4 — Authentication, Collaboration & QA
 
-## Incremental checkpoint: Stages 4A–4D
+## Incremental checkpoint: Stages 4A–4E
 
-Phase 3 is completed and verified; its merged history and phase document remain intact. Phase 4 is in progress. The backend Stage 4A/4B checkpoint was reviewed before Stage 4C began, and Stage 4C was reviewed before Stage 4D. The current implementation adds real user assignment and capability-driven edit/status controls on the existing authenticated client. Stage 4D is completed and verified; Stage 4E comments have not started.
+Phase 3 is completed and verified; its merged history and phase document remain intact. Phase 4 is in progress. The backend Stage 4A/4B checkpoint was reviewed before Stage 4C began, and Stage 4C was reviewed before Stage 4D. Stage 4D was approved before Stage 4E began. The current implementation adds persisted authenticated comments, atomic comment/activity writes, and a responsive Comments UI on that approved foundation. Stage 4E is completed and verified; Stage 4F has not started.
 
-The React client supports real login/registration, protected routes, current-user identity, logout, centralized bearer tokens, user-backed assignment, and permission-aware work item actions. Comments, expanded Postman flows, manual QA artifacts, representative bug reports, and remaining traceability are pending. The Postman collection remains the Phase 3 workflow. No Phase 5 dashboard capability has been added.
+The React client supports real login/registration, protected routes, current-user identity, logout, centralized bearer tokens, user-backed assignment, permission-aware work item actions, and comments. Expanded Postman flows, manual QA artifacts, representative bug reports, and remaining traceability are pending Stage 4F. The Postman collection remains the Phase 3 workflow. No Phase 5 dashboard capability has been added.
 
 ## Identity architecture
 
@@ -12,7 +12,7 @@ Infrastructure defines `ApplicationUser : IdentityUser<Guid>` with `DisplayName`
 
 Domain remains independent of ASP.NET Identity. Application remains independent of Identity and EF Core, working through focused current-user, identity, token, and directory abstractions with app-level DTOs and GUID user IDs. API handles bearer authentication/claims wiring and transport; Application handles resource-aware permissions.
 
-Authentication/current-user responses expose only ID, email, display name, and role names. Assignment directory responses expose ID and display name only. Infrastructure performs batched lookups for work item and activity user summaries. Password hashes, security stamps, and full Identity entities are never response contracts.
+Authentication/current-user responses expose only ID, email, display name, and role names. Assignment directory responses expose ID and display name only. Infrastructure performs batched lookups for work item, activity, and comment user summaries. Password hashes, security stamps, and full Identity entities are never response contracts.
 
 ## User and role model
 
@@ -36,24 +36,25 @@ The optional local admin bootstrap runs only in Development. Its configuration/e
 
 Use `Jwt__SigningKey` for environment configuration or set `Jwt:SigningKey` in the API project's user-secrets; `FLOWOPS_JWT_SIGNING_KEY` is an optional fallback. Invalid signing configuration fails startup clearly. Tokens use HS256 and validate issuer, audience, signature, and lifetime with zero clock skew. The configured lifetime must be 1–1,440 minutes. Signing keys, real tokens, and passwords must never be committed to application settings, environment examples, or Postman assets.
 
-Access tokens contain `sub`, `email`, `name`, `role`, and `jti`. Protected requests send `Authorization: Bearer <accessToken>`. Role claims in an issued JWT remain effective until token expiry; Phase 4 has no refresh token or revocation service. OAuth/social login, password-reset email flows, and multi-tenancy are also deferred.
+Access tokens contain `sub`, `email`, `name`, `role`, and `jti`. Protected requests send `Authorization: Bearer <accessToken>`. Role claims in an issued JWT remain effective until token expiry; Phase 4 has no refresh token or revocation service. Login and `/auth/me` reject inactive accounts, while work item reads and comments follow the existing validated-claim boundary without a per-request account-active lookup. Integration tests retain this existing behavior rather than adding a comment-specific identity workaround. OAuth/social login, password-reset email flows, and multi-tenancy are also deferred.
 
 ## Authorization matrix
 
 | Capability | Admin | Member |
 |---|---|---|
-| List/view work items, categories, and activity | Allowed | Allowed |
+| List/view work items, categories, activity, and comments | Allowed | Allowed |
+| Add a comment on a readable work item, including legacy items | Allowed | Allowed |
 | Create work items | Allowed; current user is creator | Allowed; current user is creator |
 | Edit details | Any item | Creator or current assignee |
 | Change status | Any item | Creator or current assignee |
 | Assign an unassigned item | Any active user | Self only when the item has a creator user ID |
 | Reassign an assigned item | Any active user | Forbidden |
 | Unassign | Any item | Only when assigned to self |
-| Any work item mutation on a legacy item with both creator and user assignee IDs null, including assignment | Allowed | Forbidden until an Admin legitimately assigns a user |
+| Lifecycle edit/status/assignment on a legacy item with both creator and user assignee IDs null | Allowed | Forbidden until an Admin legitimately assigns a user |
 
 A legacy item whose creator and user assignee IDs are both null is Admin-only for edit, status, and assignment; a Member cannot self-assign it. An Admin may legitimately assign an active user, after which that assignee receives the normal assignee permissions. If the item is later unassigned while creator remains null, the Admin-only boundary applies again. Matching a historical display-name string never grants access. An optional initial user assignment during creation follows the ordinary self/Admin target rule because new items always have an authenticated creator. Authoritative permissions use authenticated context, persisted user IDs, and roles; they do not trust submitted creator IDs or role values.
 
-Coarse endpoint authorization requires authentication. The focused application authorization logic handles creator, assignee, Admin, and self-assignment decisions. The mutation sequence is resource lookup → authorization → expected-version comparison → domain mutation/activity staging → save. A forbidden operation stops before mutation, activity, or `SaveChanges`. An allowed stale operation still returns a concurrency conflict.
+Coarse endpoint authorization requires authentication. The focused application authorization logic handles creator, assignee, Admin, and self-assignment decisions. The lifecycle mutation sequence is resource lookup → authorization → expected-version comparison → domain mutation/activity staging → save. A forbidden operation stops before mutation, activity, or `SaveChanges`. An allowed stale operation still returns a concurrency conflict.
 
 Responses distinguish `401` missing/invalid/expired authentication, `403` authenticated insufficient permissions, `404` missing resource, and `409` invalid transition or concurrency conflict. Safe Problem Details never expose stack traces.
 
@@ -73,9 +74,9 @@ After removing a user assignment, the compatibility field may again contain a le
 
 ## Activity and concurrency
 
-New work item creation, field changes, status changes, and assignment changes populate `ActivityEvent.ActorUserId` from authenticated context. Activity responses include a safe `actor` summary and `actorDisplayName`. Legacy activity retains null actors and `actorDisplayName: "System"`; history is never rewritten. Creator, assignee, and actor foreign keys restrict deletion of referenced users.
+New work item creation, field changes, status changes, and assignment changes populate `ActivityEvent.ActorUserId` from authenticated context. Activity responses include a safe `actor` summary and `actorDisplayName`. Legacy activity retains null actors and `actorDisplayName: "System"`; history is never rewritten. Creator, assignee, actor, and comment-author foreign keys restrict deletion of referenced users. Comments add `CommentAdded` with the authenticated actor and description `Comment added`, without copying the comment body into Activity.
 
-Phase 3's `WorkItem.Version`, positive request `expectedVersion`, domain version increments, and EF concurrency token remain intact. Assignment using a user ID also requires the representation's expected version. The application rejects stale permitted requests before mutation/events/save, and EF protects races after server load. Work item and activity changes save atomically, so a failing EF concurrency check cannot leave a ghost activity event. Clients must refresh and review the newest representation before retrying rather than replay stale values automatically.
+Phase 3's `WorkItem.Version`, positive request `expectedVersion`, domain version increments, and EF concurrency token remain intact. Assignment using a user ID also requires the representation's expected version. The application rejects stale permitted requests before mutation/events/save, and EF protects races after server load. Work item and activity changes save atomically, so a failing EF concurrency check cannot leave a ghost activity event. Clients must refresh and review the newest representation before retrying rather than replay stale values automatically. Comment POST requires no expectedVersion, leaves `WorkItem.Version` and `UpdatedAtUtc` unchanged, and saves its Comment/CommentAdded together without mutating the WorkItem. An edit opened at version N remains valid after another user comments.
 
 ## Additive migrations
 
@@ -83,10 +84,13 @@ Phase 3's `WorkItem.Version`, positive request `expectedVersion`, domain version
 |---|---|
 | `20260929223011_AddIdentityFoundation` | GUID-based Identity users/roles/tables; display name/active user fields; deterministic Admin/Member role definitions |
 | `20260929223344_AddUserBackedWorkItems` | Nullable creator and assignee user references; restrictive creator, assignee, and activity actor user foreign keys/indexes |
+| `20260930092502_AddWorkItemComments` | Comments table; WorkItem cascade FK, author restrict FK, work item/timestamp index and conventional author FK index |
 
-Neither migration rewrites earlier migrations or maps names to users. The migrations preserve existing work items, legacy assignment snapshots, and activity history. EF tooling requires an explicit `ConnectionStrings__DefaultConnection`; its design-time DbContext factory does not start runtime JWT authentication. Setup examples are in [backend/README.md](../../backend/README.md).
+The additive migrations do not rewrite earlier migrations or map names to users. The migrations preserve existing work items, legacy assignment snapshots, and activity history. EF tooling requires an explicit `ConnectionStrings__DefaultConnection`; its design-time DbContext factory does not start runtime JWT authentication. Setup examples are in [backend/README.md](../../backend/README.md).
 
 Migration checks use a disposable PostgreSQL schema containing Phase 3 records, upgrade to the current model, verify preserved records, roll down to `20260929163759_AddWorkItemConcurrency`, and apply the migrations again. Independent verification also copied the actual Phase 3 development database into a disposable database: all six work items and 15 activity events retained their original fields through up/down-to-Phase-3/up. The final schema contained both deterministic roles, and all six legacy work items retained null creator/assignee references. The source development database was untouched.
+
+Stage 4E adds a PostgreSQL Stage 4D → latest → Stage 4D → latest test. Full snapshots preserve existing WorkItems (including versions/timestamps and creator/assignee IDs), activity, Identity users, roles/memberships, and categories. The new migration creates only Comments and its keys/indexes. Down drops the Comments table, so Stage 4E comments are lost; Up recreates an empty table. Verification uses disposable data and leaves the development database untouched.
 
 Rolling down the ownership migration removes new ownership/assignment references. Rolling down Identity removes accounts and roles. Original Phase 3 application records remain, but Phase 4 user data should be backed up before any real rollback.
 
@@ -105,8 +109,9 @@ Rolling down the ownership migration removes new ownership/assignment references
 | `POST` | `/api/v1/work-items/{id}/status` | Authenticated; status policy enforced |
 | `POST` | `/api/v1/work-items/{id}/assign` | Authenticated; assignment policy enforced |
 | `GET` | `/api/v1/work-items/{id}/activity` | Authenticated |
+| `GET`, `POST` | `/api/v1/work-items/{id}/comments` | Authenticated Admin/Member; follows work item read boundary |
 
-The full contracts and examples are in [API Design](../API_DESIGN.md). There are no comments endpoints at this checkpoint. The existing Postman collection/environment are preserved for the later Stage 4F auth workflow expansion; they contain no real credentials or tokens.
+The full contracts and examples are in [API Design](../API_DESIGN.md). Stage 4E includes comments GET/POST with strict body-only creation and safe author responses. The existing Postman collection/environment are preserved for the later Stage 4F auth workflow expansion; they contain no real credentials or tokens.
 
 ## Stage 4C frontend authentication
 
@@ -120,7 +125,7 @@ The central API client owns bearer headers. It attaches a session token only wit
 
 A protected `401` invalidates only when that request carried the current token and its captured session revision still matches. Late failures cannot erase a newer login, and concurrent failures invalidate once. Provider guards also prevent late `/me` responses or completed sign-in attempts from restoring a signed-out session. A `403` preserves authentication and shows a permission message rather than retrying or logging out.
 
-At the Stage 4C checkpoint, work item edit/status requests retained expectedVersion propagation and stale-route guards. Create sent `assigneeUserId: null`; unsupported free-text assignment fields were removed. Detail displayed current/historical assignment read-only, and activity displayed `actorDisplayName` with `System` for legacy events. Stage 4D now adds the assignment and permission controls described below; comments remain deferred.
+At the Stage 4C checkpoint, work item edit/status requests retained expectedVersion propagation and stale-route guards. Create sent `assigneeUserId: null`; unsupported free-text assignment fields were removed. Detail displayed current/historical assignment read-only, and activity displayed `actorDisplayName` with `System` for legacy events. Stage 4D added the assignment and permission controls described below; comments were deferred at those historical checkpoints and are now implemented by Stage 4E.
 
 SessionStorage is accessible to JavaScript, so XSS can read the token. Phase 4 has no refresh token, revocation service, or client idle-expiry timer. Expiry metadata is stored, while API `401` responses and reload-time `/me` checks establish validity authoritatively. A production deployment may move toward secure server-managed/httpOnly sessions. Frontend setup and validation commands are in [frontend/README.md](../../frontend/README.md).
 
@@ -137,6 +142,20 @@ Create remains unassigned, submitting no creator ID and `assigneeUserId: null`. 
 A mutation `403` keeps authentication and the current item, displays a permission error, and does not automatically refresh away the error. A stale `409` shows refresh/review guidance without automatic retry. Protected `401` uses the existing centralized matching-token/revision invalidation path. Backend resource → authorization → expectedVersion → mutation/activity/save ordering is unchanged; a forbidden stale request remains forbidden.
 
 Detail, desktop table, and mobile cards share real-first assignment presentation. The name filter continues to match current user display names or a legacy snapshot only while no user is assigned, with copy explaining those semantics. Activity retains server-resolved actor names. This stage adds no backend authorization changes, comments, user management, invitations, or teams.
+
+## Stage 4E work item comments
+
+Domain `Comment` stores generated `Id`, route-context `WorkItemId`, authenticated `AuthorUserId`, required trimmed `Body`, and server UTC `CreatedAtUtc`. Body is limited to 2000 characters before trimming; blank/whitespace-only input is rejected and internal newlines survive. Identity navigation properties stay in Infrastructure. The author FK restricts deletion, the item FK cascades, and the work item/timestamp index supports explicit ascending timestamp/ID ordering.
+
+GET returns an oldest-first array (empty for an item with no comments). POST accepts exactly `{ "body": "..." }` and returns `201` with `{ id, workItemId, body, createdAtUtc, author: { id, displayName } }` and a Location for GET. Strict unknown-field rejection prevents author, timestamp, role, resource ID, and expectedVersion spoofing. Any authenticated Admin or Member may comment on a readable item regardless of creator, assignee, or legacy lifecycle capabilities. Missing items return `404`, invalid bodies `400`, and missing/invalid authentication `401`. Ordinary comment creation has no version conflict or creator/assignee `403`.
+
+Application uses existing `IWorkItemService`/`IWorkItemStore` methods, `ICurrentUser`, and `IUserDirectory`. Lists resolve distinct author IDs in one batch; unresolved summaries use `User unavailable`. Author resolution for POST occurs before staging writes so a lookup failure cannot report an HTTP failure after persistence. The comment and `CommentAdded` event share one `SaveChangesAsync` and the same UTC timestamp. The event actor is the current user and its description is `Comment added`. Neither WorkItem version nor updated timestamp changes.
+
+The frontend adds typed Comment/CreateComment contracts and central API methods. A component keyed by item ID renders Comments separately below Activity with author, timestamp, and escaped multiline plain text. It owns loading, empty, local error/retry, and submitting states. The labelled maxLength-2000 textarea validates blank input, associates errors, prevents duplicate submissions, retains failed text, and clears successful text.
+
+Successful POST appends the returned comment and refreshes only Activity. It leaves detail/version and open edit forms intact. Unmount and request-sequence guards suppress stale list, submit, error, retry, and completion results after navigation, including wrong-route activity refresh. Merging a late GET with comments already added prevents lost UI entries. Timestamp fractions are retained before ID tie-breaking. Comments remain outside the lifecycle mutation gate and inherit unchanged central `401`/`403` session behavior.
+
+No comment editing, deletion, replies, reactions, mentions, attachments, rich text, notifications, or WebSockets are included.
 
 ## Verification evidence
 
@@ -164,7 +183,7 @@ The Stage 4C security review inspected 62 source/build files, including three ge
 
 Stage 4D passes all 166 frontend tests across 12 files, adding 51 cases over the 115-test Stage 4C checkpoint. Tests cover capability-driven controls, Admin and Member assignment flows, lazy directory loading/empty/error/retry, accessible selection, current/historical assignment rendering, server version propagation, serialized mutations, `403`/`409` behavior, and late assignment/directory responses after navigation. Existing auth/session and lifecycle tests remain green. Preflight `npm ci` reported zero audit vulnerabilities; Prettier, ESLint with zero warnings/errors, and TypeScript/Vite production build pass.
 
-The unchanged backend passes all 82 unit tests and 102 real PostgreSQL integration cases with zero failures/skips. Restore, whole-solution formatting verification, and build pass with zero warnings/errors. Stage 4D introduces no backend authorization changes. All Stage 4D exit gates pass; Stage 4E has not started.
+The unchanged backend passes all 82 unit tests and 102 real PostgreSQL integration cases with zero failures/skips. Restore, whole-solution formatting verification, and build pass with zero warnings/errors. Stage 4D introduces no backend authorization changes. All Stage 4D exit gates passed at that historical checkpoint, before Stage 4E authorization.
 
 ### Stage 4D rendered-browser verification
 
@@ -179,6 +198,22 @@ Desktop table and mobile cards showed current real names and clearly labelled hi
 Browser QA found an edit-dialog focus defect: its autofocus field could prevent returning focus to Edit details after Escape. The Modal now accepts an explicit trigger reference, and detail uses a stable close callback. A successful edit waits for its activity refresh before closing alongside the mutation unlock, so its trigger is enabled when focus returns. Three regressions cover Escape/focus trapping, activity completing while the dialog is open, and successful save with a delayed activity response. Real mobile Escape and desktop save focus checks pass.
 
 The Browser plugin was unavailable, so these checks used the existing bundled Playwright/Chromium fallback without adding repository dependencies. Four final screenshots (desktop assignment/list and mobile assignment/historical detail) were inspected. There are zero unexpected runtime or console errors; expected negative-case `401`, `403`, `409`, and intercepted `503` resource diagnostics were excluded from that count. This local Chromium verification does not claim cross-browser coverage or later-stage Postman/manual QA artifacts.
+
+### Stage 4E automated verification
+
+Preflight confirmed the correct branch, clean working tree, approved Stage 4D commits, and all 82 unit, 102 PostgreSQL, and 166 frontend baseline tests passing before implementation. Final Stage 4E totals are **110 backend unit tests, 133 PostgreSQL integration cases, and 204 frontend tests across 14 files**, with no failures or skips. This adds 28 unit, 31 integration, and 38 frontend cases while retaining every previous test. Backend restore, whole-solution format verification, and build pass with zero warnings/errors. Frontend `npm ci` reports zero audit vulnerabilities; format, lint with zero warnings/errors, and TypeScript/Vite production build pass.
+
+`CommentTests` and `WorkItemCommentServiceTests` cover body/UTC invariants, current-user authorship, safe batched author mapping/fallback, resource/auth failures, one save path, unchanged WorkItem fields, and pre-write lookup failures. `CommentsApiTests` exercise both roles, legacy items, strict identity/timestamp/resource/version spoof rejection, safe JSON shape, persistence, deterministic order, history through account deactivation, existing inactive-session semantics, activity actors, and unchanged version/updated timestamp. PostgreSQL AFTER INSERT fault triggers fail either Comments or CommentAdded ActivityEvents: both paths return a safe failure and persist neither row, followed by successful recovery. An independently authenticated user comments while an edit keeps expectedVersion N; that edit still succeeds with N.
+
+`MigrationCommentsTests` proves Stage 4D schema/data preservation through Up/Down/Up and documents comment loss on Down. `workItems.test.ts`, `WorkItemComments.test.tsx`, and detail-page regressions cover central auth/body-only contracts, list/submission states, accessible validation, duplicate guards, failure retention, delayed GET merging, timestamp precision, route races, Activity-only refresh, and edit/status expectedVersion retention. No backend defects requiring authorization or concurrency changes were found.
+
+### Stage 4E rendered-browser verification
+
+Twenty checks pass in Chromium 151.0.7922.34 at 1440 × 1000 desktop and 390 × 844 mobile sizes, using two real registered Members against the real API and an isolated PostgreSQL database. Member A creates an item and sees empty Comments, submits trimmed multiline text, and sees their safe name/time plus separate authenticated Activity. Unrelated Member B sees the persisted conversation and appends another comment while lifecycle editing remains hidden. Ordering and unchanged WorkItem version/updated timestamp are checked against server state.
+
+An edit opened at version 1 stays open while Member B comments; the original edit submits expectedVersion 1 successfully and receives version 2. Reload retrieves all comments. HTML-like text remains escaped plain text, long unbroken bodies wrap, the 2000-character textarea boundary holds, and an over-limit central API request returns real `400`. A deliberately intercepted GET `503` stays within Comments and retry uses the real backend. A failed POST retains its draft and successfully retries; intercepted `403` preserves session/draft locally. Logout clears the session, and a real comment POST `401` takes the unchanged central invalidation/protected-route path to login.
+
+Mobile checks verify no horizontal overflow or nested interactive controls, an accessible textarea, Tab/Enter comment submission, preserved multiline text, and existing navigation Escape/focus restoration. A Member can comment on a legacy unowned item while edit/status/assignment restrictions and version remain intact. Three screenshots were visually inspected. There are zero unexpected runtime or console errors; expected `400`/`401` and intercepted `403`/`503` resource diagnostics are identified separately. Passwords, signing keys, and bearer values are omitted from evidence. The existing bundled Playwright/Chromium fallback adds no repository dependency. These Stage 4E checks do not claim cross-browser coverage or delivery of Stage 4F Postman/manual QA artifacts.
 
 ### Backend requirement traceability
 
@@ -224,6 +259,6 @@ These existing automated tests map the backend checkpoint requirements. Manual Q
 
 ## Later-stage decisions and limitations
 
-Stage 4D is completed and verified. Work stops at this checkpoint, ready for Stage 4E review and authorization. Stage 4E will add persisted comments, authenticated authors, comment activity, and UI; the intended atomic comment/activity write will not increment the work item version for a comment alone. Stages 4F/4G will add authenticated/negative Postman flows, focused manual QA cases, real historical development bug reports, remaining requirement traceability, final browser QA/documentation, CI verification, and PR delivery.
+Stage 4E is completed and verified. Work stops at this checkpoint, ready for Stage 4F QA depth after review and authorization. Stages 4F/4G will add authenticated/negative Postman flows, focused manual QA cases, real historical development bug reports, remaining requirement traceability, final browser QA/documentation, CI verification, and PR delivery.
 
-No comments, real-time features, notifications, reactions, mentions, rich text, profile editing, dashboard aggregation, or later-phase infrastructure are included in the checkpoint. Phase 4 remains in progress; Stage 4E has not begun and no PR is opened by this stage.
+Comments remain an unpaginated plain-text list with no editing, deletion, replies, real-time features, notifications, reactions, mentions, or rich text. Profile editing, dashboard aggregation, and later-phase infrastructure are not included. Existing JWT claims remain effective until expiry with no revocation service. Phase 4 remains in progress; Stage 4F and Phase 5 have not begun. No PR is opened, pushed, or merged by this stage.
