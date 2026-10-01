@@ -17,6 +17,8 @@ public class WorkItem
     public WorkItemPriority Priority { get; private set; }
     public Guid? CategoryId { get; private set; }
     public Category? Category { get; private set; }
+    public Guid? CreatedByUserId { get; private set; }
+    public Guid? AssigneeUserId { get; private set; }
     public string? AssigneeName { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -31,7 +33,9 @@ public class WorkItem
         WorkItemStatus status = WorkItemStatus.Todo,
         Guid? categoryId = null,
         Guid? id = null,
-        DateTime? createdAtUtc = null)
+        DateTime? createdAtUtc = null,
+        Guid? createdByUserId = null,
+        Guid? assigneeUserId = null)
     {
         Id = id ?? Guid.NewGuid();
         Version = 1;
@@ -41,6 +45,8 @@ public class WorkItem
         Status = ValidateStatus(status);
         AssigneeName = NormalizeAssignee(assigneeName);
         CategoryId = categoryId;
+        CreatedByUserId = ValidateUserId(createdByUserId);
+        AssigneeUserId = ValidateUserId(assigneeUserId);
 
         var created = EnsureUtc(createdAtUtc ?? DateTime.UtcNow);
         CreatedAtUtc = created;
@@ -104,6 +110,19 @@ public class WorkItem
         Touch();
         return true;
     }
+
+    public bool AssignToUser(Guid? assigneeUserId)
+    {
+        var validated = ValidateUserId(assigneeUserId);
+        if (AssigneeUserId == validated) return false;
+        AssigneeUserId = validated;
+        Touch();
+        return true;
+    }
+
+    private static Guid? ValidateUserId(Guid? userId) => userId == Guid.Empty
+        ? throw new ArgumentException("User ID cannot be empty.", nameof(userId))
+        : userId;
 
     public bool CanTransitionTo(WorkItemStatus nextStatus)
     {

@@ -4,6 +4,7 @@ import { WorkItem } from '@/types/workItems';
 import { Card } from '@/components/ui/Card';
 import { WorkItemStatusBadge } from './WorkItemStatusBadge';
 import { WorkItemPriorityBadge } from './WorkItemPriorityBadge';
+import { WorkItemAssignee } from './WorkItemAssignee';
 import { formatDate } from '@/lib/utils';
 import { User, Clock } from 'lucide-react';
 
@@ -33,12 +34,12 @@ export const WorkItemCard: React.FC<WorkItemCardProps> = ({ item }) => {
         {item.categoryName && (
           <p className="text-xs text-slate-500 mb-2">Category: {item.categoryName}</p>
         )}
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-          <div className="flex items-center gap-1.5">
-            <User className="h-3.5 w-3.5 text-slate-400" />
-            <span>{item.assigneeName || 'Unassigned'}</span>
+        <div className="flex items-start justify-between gap-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+          <div className="flex min-w-0 flex-1 items-start gap-1.5">
+            <User className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+            <WorkItemAssignee item={item} className="min-w-0" />
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <Clock className="h-3.5 w-3.5 text-slate-400" />
             <span>{formatDate(item.createdAtUtc)}</span>
           </div>

@@ -76,7 +76,6 @@ export const CreateWorkItemModal: React.FC<CreateWorkItemModalProps> = ({
       ) : (
         <WorkItemForm
           categories={categories}
-          includeAssignee
           submitLabel="Create item"
           onCancel={onClose}
           onSubmit={handleSubmit}

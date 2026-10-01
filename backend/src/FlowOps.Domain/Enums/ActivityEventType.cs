@@ -8,5 +8,6 @@ public enum ActivityEventType
     PriorityChanged,
     CategoryChanged,
     StatusChanged,
-    AssignmentChanged
+    AssignmentChanged,
+    CommentAdded
 }

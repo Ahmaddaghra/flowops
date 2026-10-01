@@ -1,68 +1,489 @@
 {
   "info": {
     "_postman_id": "2a7a62a4-63eb-4cf8-a5d7-39c3cc4593d8",
-    "name": "FlowOps Phase 3",
-    "description": "Work item lifecycle, activity, categories, and server-side list queries. Select the local environment before sending requests.",
+    "name": "FlowOps Phase 4 Authenticated QA",
+    "description": "Stage 4F: sequential authenticated Admin/Member lifecycle, user-backed assignment, body-only comments, activity, negative paths and optimistic concurrency. Select the placeholder-only local environment and privately fill credentials before running. See docs/qa/postman-guide.md. Use an isolated disposable database. No tokens or credentials are logged by scripts.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{memberToken}}",
+        "type": "string"
+      }
+    ]
   },
   "item": [
     {
-      "name": "Categories",
+      "name": "Authentication",
+      "description": "Create two distinct Members once, sign in both and an independently configured Development Admin. Public requests never inherit a bearer token.",
       "item": [
         {
-          "name": "List active categories",
+          "name": "Register Member",
           "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/categories"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Work items",
-      "item": [
-        {
-          "name": "List work items",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/work-items?page=1&pageSize=20&sort=createdAt&direction=desc"
-          }
-        },
-        {
-          "name": "Search and filter work items",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/work-items?search=login&status=InProgress&priority=High&categoryId={{categoryId}}&assignee=Ahmad&page=1&pageSize=10&sort=updatedAt&direction=desc"
-          }
-        },
-        {
-          "name": "Create work item",
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{memberEmail}}\",\n  \"password\": \"{{memberPassword}}\",\n  \"displayName\": \"QA Member A\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "First run only: use a new email and a privately configured policy-compliant password. Registration always creates Member."
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Created with 201 and a Location header', function () {",
-                  "    pm.response.to.have.status(201);",
-                  "    pm.expect(pm.response.headers.get('Location')).to.be.ok;",
-                  "});",
-                  "pm.test('New work item starts at version 1', function () { pm.expect(pm.response.json().version).to.eql(1); });",
-                  "if (pm.response.code === 201) { const item = pm.response.json(); pm.environment.set('workItemId', item.id); pm.environment.set('workItemVersion', item.version); }"
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Expected role and safe authentication response', function () {",
+                  "        pm.expect(json.user.roles).to.include('Member');",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['accessToken', 'expiresAtUtc', 'user']);",
+                  "        pm.expect(Object.keys(json.user).sort()).to.eql(['displayName', 'email', 'id', 'roles']);",
+                  "        pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.id).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.roles).not.to.include('Admin');",
+                  "    });",
+                  "    pm.environment.set('memberToken', json.accessToken);",
+                  "    pm.environment.set('memberUserId', json.user.id);",
+                  "}"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "Register second Member",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Investigate customer login issue\",\n  \"description\": \"Intermittent failures reported by customer\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"assigneeName\": \"Ahmad\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"email\": \"{{secondMemberEmail}}\",\n  \"password\": \"{{secondMemberPassword}}\",\n  \"displayName\": \"QA Member B\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": "{{baseUrl}}/work-items"
-          }
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "First run only: the second Member must have a different email."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Expected role and safe authentication response', function () {",
+                  "        pm.expect(json.user.roles).to.include('Member');",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['accessToken', 'expiresAtUtc', 'user']);",
+                  "        pm.expect(Object.keys(json.user).sort()).to.eql(['displayName', 'email', 'id', 'roles']);",
+                  "        pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.id).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.roles).not.to.include('Admin');",
+                  "    });",
+                  "    pm.environment.set('secondMemberToken', json.accessToken);",
+                  "    pm.environment.set('secondMemberUserId', json.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Member",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{memberEmail}}\",\n  \"password\": \"{{memberPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Expected role and safe authentication response', function () {",
+                  "        pm.expect(json.user.roles).to.include('Member');",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['accessToken', 'expiresAtUtc', 'user']);",
+                  "        pm.expect(Object.keys(json.user).sort()).to.eql(['displayName', 'email', 'id', 'roles']);",
+                  "        pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.id).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.roles).not.to.include('Admin');",
+                  "    });",
+                  "    pm.environment.set('memberToken', json.accessToken);",
+                  "    pm.environment.set('memberUserId', json.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login second Member",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{secondMemberEmail}}\",\n  \"password\": \"{{secondMemberPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Expected role and safe authentication response', function () {",
+                  "        pm.expect(json.user.roles).to.include('Member');",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['accessToken', 'expiresAtUtc', 'user']);",
+                  "        pm.expect(Object.keys(json.user).sort()).to.eql(['displayName', 'email', 'id', 'roles']);",
+                  "        pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.id).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.roles).not.to.include('Admin');",
+                  "    });",
+                  "    pm.environment.set('secondMemberToken', json.accessToken);",
+                  "    pm.environment.set('secondMemberUserId', json.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Admin",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Admin must be created by the existing Development-only bootstrap, with a different email from both Members. Public registration cannot create Admin."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Expected role and safe authentication response', function () {",
+                  "        pm.expect(json.user.roles).to.include('Admin');",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['accessToken', 'expiresAtUtc', 'user']);",
+                  "        pm.expect(Object.keys(json.user).sort()).to.eql(['displayName', 'email', 'id', 'roles']);",
+                  "        pm.expect(json.accessToken).to.be.a('string').and.not.empty;",
+                  "        pm.expect(json.user.id).to.be.a('string').and.not.empty;",
+                  "        ",
+                  "    });",
+                  "    pm.environment.set('adminToken', json.accessToken);",
+                  "    pm.environment.set('adminUserId', json.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get current Member",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Current identity is Member A', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.id).to.eql(pm.environment.get('memberUserId'));",
+                  "    pm.expect(json.roles).to.include('Member');",
+                  "    pm.expect(json.roles).not.to.include('Admin');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject role selection at registration",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{memberEmail}}\",\n  \"password\": \"{{memberPassword}}\",\n  \"displayName\": \"Role selection attempt\",\n  \"role\": \"Admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "The strict DTO rejects the extra role field before Identity registration; this does not create or promote an account."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List active user summaries",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/users"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Active directory exposes only IDs and display names', function () {",
+                  "    const users = pm.response.json();",
+                  "    pm.expect(users).to.be.an('array');",
+                  "    users.forEach(function (user) { pm.expect(Object.keys(user).sort()).to.eql(['displayName', 'id']); });",
+                  "    ['memberUserId', 'secondMemberUserId', 'adminUserId'].forEach(function (key) {",
+                  "        pm.expect(users.some(function (user) { return user.id === pm.environment.get(key); })).to.eql(true);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Work Items",
+      "description": "Member A creates the unassigned item. All later folders share this new item, with response versions captured after successful lifecycle mutations.",
+      "item": [
+        {
+          "name": "List active categories",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/categories"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const categories = pm.response.json();",
+                  "    pm.test('At least one active category is available', function () {",
+                  "        pm.expect(categories).to.be.an('array').and.not.empty;",
+                  "        categories.forEach(function (category) { pm.expect(category.isActive).to.eql(true); });",
+                  "    });",
+                  "    if (categories.length) pm.environment.set('categoryId', categories[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create work item",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Phase 4 authenticated workflow\",\n  \"description\": \"Initial QA details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"assigneeUserId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Creator comes from JWT and item starts unassigned at version 1', function () {",
+                  "        pm.expect(json.createdByUserId).to.eql(pm.environment.get('memberUserId'));",
+                  "        pm.expect(json.assigneeUserId).to.eql(null);",
+                  "        pm.expect(json.version).to.eql(1);",
+                  "        pm.expect(pm.response.headers.get('Location')).to.be.ok;",
+                  "    });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List work items",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items?page=1&pageSize=20&sort=createdAt&direction=desc"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Server returns a paged result containing the created item', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.page).to.eql(1);",
+                  "    pm.expect(json.pageSize).to.eql(20);",
+                  "    pm.expect(json.items.some(function (item) { return item.id === pm.environment.get('workItemId'); })).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Get work item detail",
@@ -76,22 +497,1483 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200) { const item = pm.response.json(); pm.environment.set('workItemId', item.id); pm.environment.set('workItemVersion', item.version); }"
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    ",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Update descriptive fields",
+          "name": "Creator edits details",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Investigate login failures\",\n  \"description\": \"Reproduction steps are being collected\",\n  \"priority\": \"Critical\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"title\": \"Creator updated workflow\",\n  \"description\": \"Creator verified details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Creator edit succeeds', function () { pm.expect(json.title).to.eql('Creator updated workflow'); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Creator moves to InProgress",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"InProgress\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Valid status transition succeeds', function () { pm.expect(json.status).to.eql('InProgress'); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search and filter work items",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items?search=workflow&status=InProgress&priority=High&categoryId={{categoryId}}&page=1&pageSize=10&sort=updatedAt&direction=asc"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Search, filters and pagination are applied on the server', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.pageSize).to.eql(10);",
+                  "    pm.expect(json.items.some(function (item) { return item.id === pm.environment.get('workItemId'); })).to.eql(true);",
+                  "    json.items.forEach(function (item) {",
+                  "        pm.expect(item.status).to.eql('InProgress');",
+                  "        pm.expect(item.priority).to.eql('High');",
+                  "        pm.expect(item.categoryId).to.eql(pm.environment.get('categoryId'));",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Assignment",
+      "description": "Second Member is initially unrelated. Real assignee IDs grant normal lifecycle rights; Admin may assign/reassign/unassign anyone. The folder finishes unassigned and Blocked.",
+      "item": [
+        {
+          "name": "Second Member self-assigns",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": \"{{secondMemberUserId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Unrelated Member may self-assign an eligible unassigned item', function () { pm.expect(json.assigneeUserId).to.eql(pm.environment.get('secondMemberUserId')); pm.expect(json.permissions.canEdit).to.eql(true); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assignee edits details",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Assignee updated workflow\",\n  \"description\": \"Assignee verified details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Current assignee may edit', function () { pm.expect(json.title).to.eql('Assignee updated workflow'); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Second Member self-unassigns",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": null,\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Self-unassignment removes unrelated Member lifecycle rights', function () { pm.expect(json.assigneeUserId).to.eql(null); pm.expect(json.permissions.canEdit).to.eql(false); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin assigns Member",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": \"{{memberUserId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Admin may assign another user', function () { pm.expect(json.assigneeUserId).to.eql(pm.environment.get('memberUserId')); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin reassigns second Member",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": \"{{secondMemberUserId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Admin may reassign', function () { pm.expect(json.assigneeUserId).to.eql(pm.environment.get('secondMemberUserId')); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin edits details",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Admin updated workflow\",\n  \"description\": \"Admin verified details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Admin override may edit', function () { pm.expect(json.title).to.eql('Admin updated workflow'); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin moves to Blocked",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Blocked\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Admin override may change status', function () { pm.expect(json.status).to.eql('Blocked'); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin unassigns",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": null,\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    pm.test('Admin may unassign another user', function () { pm.expect(json.assigneeUserId).to.eql(null); });",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Comments",
+      "description": "Body-only requests never submit author, route identity, timestamp, role or expectedVersion. Comment response IDs are separate from the WorkItem version.",
+      "item": [
+        {
+          "name": "Get comments empty",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/comments"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('commentWorkItemVersion', pm.environment.get('workItemVersion'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('New item has no comments', function () { pm.expect(pm.response.json()).to.eql([]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Member adds trimmed comment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/comments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"  Investigated the customer report.\\nNext step: verify the fix.  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Comment has safe authenticated authorship and trimmed body', function () {",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['author', 'body', 'createdAtUtc', 'id', 'workItemId']);",
+                  "        pm.expect(Object.keys(json.author).sort()).to.eql(['displayName', 'id']);",
+                  "        pm.expect(json.author.id).to.eql(pm.environment.get('memberUserId'));",
+                  "        pm.expect(json.body).to.eql(\"Investigated the customer report.\\nNext step: verify the fix.\");",
+                  "        pm.expect(json.workItemId).to.eql(pm.environment.get('workItemId'));",
+                  "        pm.expect(pm.environment.get('workItemVersion')).to.eql(pm.environment.get('commentWorkItemVersion'));",
+                  "    });",
+                  "    pm.environment.set('firstCommentId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Second Member adds comment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/comments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Confirmed the reproduction steps.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Comment has safe authenticated authorship and trimmed body', function () {",
+                  "        pm.expect(Object.keys(json).sort()).to.eql(['author', 'body', 'createdAtUtc', 'id', 'workItemId']);",
+                  "        pm.expect(Object.keys(json.author).sort()).to.eql(['displayName', 'id']);",
+                  "        pm.expect(json.author.id).to.eql(pm.environment.get('secondMemberUserId'));",
+                  "        pm.expect(json.body).to.eql(\"Confirmed the reproduction steps.\");",
+                  "        pm.expect(json.workItemId).to.eql(pm.environment.get('workItemId'));",
+                  "        pm.expect(pm.environment.get('workItemVersion')).to.eql(pm.environment.get('commentWorkItemVersion'));",
+                  "    });",
+                  "    pm.environment.set('secondCommentId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get ordered comments",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/comments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Both comments persist oldest-first with safe author summaries', function () {",
+                  "    const comments = pm.response.json();",
+                  "    pm.expect(comments.map(function (comment) { return comment.id; })).to.eql([pm.environment.get('firstCommentId'), pm.environment.get('secondCommentId')]);",
+                  "    comments.forEach(function (comment) { pm.expect(Object.keys(comment.author).sort()).to.eql(['displayName', 'id']); });",
+                  "    for (let index = 1; index < comments.length; index++) {",
+                  "        pm.expect(Date.parse(comments[index - 1].createdAtUtc)).to.be.at.most(Date.parse(comments[index].createdAtUtc));",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify comments preserve WorkItem version",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "description": "Deliberately does not update workItemVersion. Proves persisted state as well as the unchanged collection variable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Comment operations leave persisted WorkItem version unchanged', function () {",
+                  "    pm.expect(pm.response.json().version).to.eql(Number(pm.environment.get('commentWorkItemVersion')));",
+                  "    pm.expect(pm.environment.get('workItemVersion')).to.eql(pm.environment.get('commentWorkItemVersion'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Activity",
+      "item": [
+        {
+          "name": "Get authenticated activity history",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/activity"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Activity records trusted actors and separate CommentAdded events', function () {",
+                  "    const events = pm.response.json();",
+                  "    const comments = events.filter(function (activity) { return activity.eventType === 'CommentAdded'; });",
+                  "    pm.expect(comments).to.have.lengthOf(2);",
+                  "    pm.expect(comments.map(function (activity) { return activity.actorUserId; }).sort()).to.eql([pm.environment.get('memberUserId'), pm.environment.get('secondMemberUserId')].sort());",
+                  "    comments.forEach(function (activity) {",
+                  "        pm.expect(activity.description).to.eql('Comment added');",
+                  "        pm.expect(activity.actor.id).to.eql(activity.actorUserId);",
+                  "        pm.expect(Object.keys(activity.actor).sort()).to.eql(['displayName', 'id']);",
+                  "    });",
+                  "    pm.expect(events.some(function (activity) { return activity.eventType === 'Created' && activity.actorUserId === pm.environment.get('memberUserId'); })).to.eql(true);",
+                  "    pm.expect(events.some(function (activity) { return activity.eventType === 'AssignmentChanged' && activity.actorUserId === pm.environment.get('adminUserId'); })).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Negative Authorization",
+      "description": "Intentional 401/403/400/404 responses pass their assertions. They must not overwrite successful WorkItem versions or auth tokens. Member B is unrelated again after Admin unassigns.",
+      "item": [
+        {
+          "name": "Wrong password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{memberEmail}}\",\n  \"password\": \"INCORRECT_PASSWORD_FOR_QA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () { pm.response.to.have.status(401); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(401);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    pm.expect(json.title).to.eql(\"Authentication Failed\");",
+                  "});",
+                  "pm.test('Login failure is generic', function () { pm.expect(pm.response.json().detail).to.eql('Invalid email or password.'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anonymous protected request",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () { pm.response.to.have.status(401); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(401);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Malformed bearer token",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "not-a-valid-jwt",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', function () { pm.response.to.have.status(401); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(401);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unrelated Member edit forbidden",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Forbidden update\",\n  \"description\": \"Admin verified details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', function () { pm.response.to.have.status(403); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unrelated Member status forbidden",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"InProgress\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', function () { pm.response.to.have.status(403); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Member assigning another user forbidden",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": \"{{memberUserId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{secondMemberToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', function () { pm.response.to.have.status(403); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(403);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Blank title",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"  \",\n  \"priority\": \"High\",\n  \"assigneeUserId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid priority",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Rejected priority\",\n  \"priority\": \"Unknown\",\n  \"assigneeUserId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid status",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Unknown\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Blank comment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/comments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \" \\n\\t \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Too-long comment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/comments",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"{{tooLongCommentBody}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('tooLongCommentBody', 'x'.repeat(2001));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid expectedVersion",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeUserId\": null,\n  \"expectedVersion\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});",
+                  "pm.test('Validation is specifically expectedVersion', function () { const keys = Object.keys(pm.response.json().errors || {}); pm.expect(keys.some(function (key) { return key.toLowerCase() === 'expectedversion'; })).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing work item",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/work-items/{{missingWorkItemId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', function () { pm.response.to.have.status(404); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing category",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Rejected missing category\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{missingCategoryId}}\",\n  \"assigneeUserId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', function () { pm.response.to.have.status(404); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Concurrency / Conflict Cases",
+      "description": "Capture N separately; a title-only winning edit advances to N+1. Authorized stale detail and assignment requests must return 409 without changing the winning representation.",
+      "item": [
+        {
+          "name": "Capture stale WorkItem snapshot",
+          "request": {
+            "method": "GET",
             "url": "{{baseUrl}}/work-items/{{workItemId}}"
           },
           "event": [
@@ -100,24 +1982,44 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
-                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.environment.set('staleWorkItemVersion', json.version);",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Change status to InProgress",
+          "name": "Winning detail mutation",
           "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "method": "PATCH",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"InProgress\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": "{{baseUrl}}/work-items/{{workItemId}}/status"
+              "raw": "{\n  \"title\": \"Winning concurrency update\",\n  \"description\": \"Admin verified details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -125,24 +2027,52 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
-                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.test('WorkItem has a positive version and capabilities', function () {",
+                  "        pm.expect(json.version).to.be.a('number').and.at.least(1);",
+                  "        pm.expect(Object.keys(json.permissions).sort()).to.eql(['canAssign', 'canAssignOthers', 'canChangeStatus', 'canEdit', 'canSelfAssign', 'canUnassign']);",
+                  "    });",
+                  "    pm.test('Mutation advances the captured version', function () {",
+                  "        pm.expect(json.version).to.be.above(Number(pm.environment.get('workItemVersion')));",
+                  "    });",
+                  "    ",
+                  "    pm.test('Only the title changes and winning version is N+1', function () {",
+                  "        pm.expect(json.version).to.eql(Number(pm.environment.get('staleWorkItemVersion')) + 1);",
+                  "        pm.expect(json.title).to.eql('Winning concurrency update');",
+                  "    });",
+                  "    pm.environment.set('winningWorkItemTitle', json.title);",
+                  "    pm.environment.set('workItemId', json.id);",
+                  "    pm.environment.set('workItemVersion', json.version);",
+                  "    pm.environment.set('workItemStatus', json.status);",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Assign work item",
+          "name": "Stale detail mutation conflicts",
           "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "method": "PATCH",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"assigneeName\": \"Ahmad\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
+              "raw": "{\n  \"title\": \"Stale edit must not win\",\n  \"description\": \"Admin verified details\",\n  \"priority\": \"High\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"expectedVersion\": {{staleWorkItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -150,24 +2080,52 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
-                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                  "pm.test('HTTP 409', function () { pm.response.to.have.status(409); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    pm.expect(json.title).to.eql(\"Work Item Concurrency Conflict\");",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Unassign work item",
+          "name": "Stale assignment conflicts",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"assigneeName\": null,\n  \"expectedVersion\": {{workItemVersion}}\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"assigneeUserId\": \"{{secondMemberUserId}}\",\n  \"expectedVersion\": {{staleWorkItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": "{{baseUrl}}/work-items/{{workItemId}}/assign"
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
             {
@@ -175,19 +2133,91 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Mutation succeeds', function () { pm.response.to.have.status(200); });",
-                  "if (pm.response.code === 200) { pm.environment.set('workItemVersion', pm.response.json().version); }"
+                  "pm.test('HTTP 409', function () { pm.response.to.have.status(409); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    pm.expect(json.title).to.eql(\"Work Item Concurrency Conflict\");",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get work item activity",
+          "name": "Verify winning state survives",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/work-items/{{workItemId}}/activity"
-          }
+            "url": "{{baseUrl}}/work-items/{{workItemId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "pm.test('Stale writes preserve the winner and captured current version', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.title).to.eql(pm.environment.get('winningWorkItemTitle'));",
+                  "    pm.expect(json.version).to.eql(Number(pm.environment.get('workItemVersion')));",
+                  "    pm.expect(json.version).to.eql(Number(pm.environment.get('staleWorkItemVersion')) + 1);",
+                  "    pm.expect(json.assigneeUserId).to.eql(null);",
+                  "    pm.expect(json.status).to.eql('Blocked');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid same-state transition conflicts",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/work-items/{{workItemId}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"{{workItemStatus}}\",\n  \"expectedVersion\": {{workItemVersion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', function () { pm.response.to.have.status(409); });",
+                  "",
+                  "pm.test('Safe ProblemDetails response', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.title).to.be.a('string');",
+                  "    pm.expect(json).not.to.have.property('exception');",
+                  "    pm.expect(json).not.to.have.property('stackTrace');",
+                  "    pm.expect(json.title).to.eql(\"Invalid Work Item Transition\");",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

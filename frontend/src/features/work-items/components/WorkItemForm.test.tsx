@@ -36,7 +36,6 @@ describe('WorkItemForm', () => {
     render(
       <WorkItemForm
         categories={categories}
-        includeAssignee
         submitLabel="Create item"
         onCancel={vi.fn()}
         onSubmit={onSubmit}
@@ -47,7 +46,7 @@ describe('WorkItemForm', () => {
     await user.type(screen.getByLabelText('Description'), 'Repeated failures');
     await user.selectOptions(screen.getByLabelText('Priority'), 'High');
     await user.selectOptions(screen.getByLabelText('Category'), 'category-1');
-    await user.type(screen.getByLabelText('Assignee name'), 'Ahmad');
+    expect(screen.queryByLabelText('Assignee name')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Create item' }));
 
     expect(await screen.findByRole('button', { name: 'Create item' })).toBeTruthy();
@@ -56,7 +55,7 @@ describe('WorkItemForm', () => {
       description: 'Repeated failures',
       priority: 'High',
       categoryId: 'category-1',
-      assigneeName: 'Ahmad',
+      assigneeUserId: null,
     });
   });
 
@@ -121,5 +120,31 @@ describe('WorkItemForm', () => {
       )
     ).toBeTruthy();
     expect(screen.queryByText('Title is required.')).toBeNull();
+  });
+
+  it('shows a permission error and preserves the form after a forbidden response', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi
+      .fn<(_request: CreateWorkItemRequest) => Promise<void>>()
+      .mockRejectedValue(new ApiError('Forbidden', 403));
+    render(
+      <WorkItemForm
+        categories={categories}
+        initialValues={{ title: 'Original title' }}
+        submitLabel="Save changes"
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    );
+
+    await user.clear(screen.getByLabelText('Title'));
+    await user.type(screen.getByLabelText('Title'), 'My unsaved edit');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(
+      await screen.findByText('You do not have permission to change this work item.')
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Title')).toHaveProperty('value', 'My unsaved edit');
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });

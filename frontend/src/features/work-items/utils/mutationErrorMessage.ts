@@ -5,6 +5,13 @@ export function workItemMutationErrorMessage(error: unknown, fallback: string): 
     return error instanceof Error ? error.message : fallback;
   }
 
+  if (error.status === 403) {
+    return (
+      error.problemDetails?.detail ??
+      'You do not have permission to change this work item.'
+    );
+  }
+
   if (error.status === 409) {
     const detail = error.problemDetails?.detail ?? error.message;
     switch (error.problemDetails?.title) {

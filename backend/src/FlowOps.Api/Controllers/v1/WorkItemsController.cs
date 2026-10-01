@@ -1,10 +1,13 @@
 using FlowOps.Application.DTOs;
 using FlowOps.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using FlowOps.Application.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FlowOps.Api.Controllers.v1;
 
+[Authorize(Roles = AppRoles.Admin + "," + AppRoles.Member)]
 [ApiController]
 [Route("api/v1/work-items")]
 public class WorkItemsController : ControllerBase
@@ -70,7 +73,7 @@ public class WorkItemsController : ControllerBase
         return item is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(item);
     }
 
-    /// <summary>Assigns a display name, or unassigns when assigneeName is null or empty.</summary>
+    /// <summary>Assigns an active user, or unassigns when assigneeUserId is null.</summary>
     [HttpPost("{id:guid}/assign")]
     [ProducesResponseType(typeof(WorkItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -90,6 +93,28 @@ public class WorkItemsController : ControllerBase
     {
         var events = await _workItemService.GetActivityAsync(id, cancellationToken);
         return events is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(events);
+    }
+
+    /// <summary>Returns oldest-first comments with safe author summaries.</summary>
+    [HttpGet("{id:guid}/comments")]
+    [ProducesResponseType(typeof(IReadOnlyList<CommentResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<CommentResponse>>> GetComments(Guid id, CancellationToken cancellationToken)
+    {
+        var comments = await _workItemService.GetCommentsAsync(id, cancellationToken);
+        return comments is null ? NotFoundProblem($"Work item '{id}' was not found.") : Ok(comments);
+    }
+
+    /// <summary>Adds a comment and its activity event without changing the work item version.</summary>
+    [HttpPost("{id:guid}/comments")]
+    [ProducesResponseType(typeof(CommentResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CommentResponse>> AddComment(Guid id, [FromBody] CreateCommentRequest request, CancellationToken cancellationToken)
+    {
+        var comment = await _workItemService.AddCommentAsync(id, request, cancellationToken);
+        return comment is null ? NotFoundProblem($"Work item '{id}' was not found.")
+            : CreatedAtAction(nameof(GetComments), new { id }, comment);
     }
 
     private ObjectResult NotFoundProblem(string detail) =>

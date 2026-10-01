@@ -1,4 +1,5 @@
 using FlowOps.Domain.Entities;
+using FlowOps.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,6 +11,9 @@ public class ActivityEventConfiguration : IEntityTypeConfiguration<ActivityEvent
     {
         builder.ToTable("ActivityEvents");
         builder.HasKey(x => x.Id);
+        builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.ActorUserId);
+
         builder.Property(x => x.EventType).HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(ActivityEvent.MaxDescriptionLength).IsRequired();
         builder.Property(x => x.CreatedAtUtc).IsRequired();

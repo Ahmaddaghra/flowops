@@ -14,7 +14,9 @@ public interface IWorkItemStore
     Task<Category?> GetCategoryByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Category>> ListActiveCategoriesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ActivityEvent>> GetActivityAsync(Guid workItemId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Comment>> GetCommentsAsync(Guid workItemId, CancellationToken cancellationToken = default);
     Task AddAsync(WorkItem item, CancellationToken cancellationToken = default);
     Task AddActivityEventAsync(ActivityEvent activityEvent, CancellationToken cancellationToken = default);
+    Task AddCommentAsync(Comment comment, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

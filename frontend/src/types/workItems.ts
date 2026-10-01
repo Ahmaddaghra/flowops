@@ -7,7 +7,22 @@ export type WorkItemActivityType =
   | 'PriorityChanged'
   | 'CategoryChanged'
   | 'StatusChanged'
-  | 'AssignmentChanged';
+  | 'AssignmentChanged'
+  | 'CommentAdded';
+
+export interface UserSummary {
+  id: string;
+  displayName: string;
+}
+
+export interface WorkItemPermissions {
+  canEdit: boolean;
+  canChangeStatus: boolean;
+  canAssign: boolean;
+  canSelfAssign: boolean;
+  canUnassign: boolean;
+  canAssignOthers: boolean;
+}
 
 export interface WorkItem {
   id: string;
@@ -18,6 +33,12 @@ export interface WorkItem {
   priority: WorkItemPriority;
   categoryId: string | null;
   categoryName: string | null;
+  createdByUserId: string | null;
+  assigneeUserId: string | null;
+  createdBy: UserSummary | null;
+  assignee: UserSummary | null;
+  permissions: WorkItemPermissions | null;
+  legacyAssigneeName: string | null;
   assigneeName: string | null;
   createdAtUtc: string;
   updatedAtUtc: string;
@@ -44,6 +65,20 @@ export interface WorkItemActivity {
   description: string;
   createdAtUtc: string;
   actorUserId: string | null;
+  actor: UserSummary | null;
+  actorDisplayName: string;
+}
+
+export interface WorkItemComment {
+  id: string;
+  workItemId: string;
+  body: string;
+  createdAtUtc: string;
+  author: UserSummary;
+}
+
+export interface CreateCommentRequest {
+  body: string;
 }
 
 export interface CreateWorkItemRequest {
@@ -51,7 +86,7 @@ export interface CreateWorkItemRequest {
   description: string | null;
   priority: WorkItemPriority;
   categoryId: string | null;
-  assigneeName: string | null;
+  assigneeUserId: string | null;
 }
 
 export type UpdateWorkItemRequest = Pick<
@@ -65,7 +100,7 @@ export interface ChangeStatusRequest {
 }
 
 export interface AssignWorkItemRequest {
-  assigneeName: string | null;
+  assigneeUserId: string | null;
   expectedVersion: number;
 }
 

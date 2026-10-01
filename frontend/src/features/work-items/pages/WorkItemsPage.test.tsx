@@ -30,6 +30,12 @@ const item: WorkItem = {
   priority: 'High',
   categoryId: null,
   categoryName: null,
+  createdByUserId: 'user-1',
+  assigneeUserId: 'user-1',
+  createdBy: { id: 'user-1', displayName: 'Ahmad' },
+  assignee: { id: 'user-1', displayName: 'Ahmad' },
+  permissions: null,
+  legacyAssigneeName: null,
   assigneeName: 'Ahmad',
   createdAtUtc: '2026-09-29T10:00:00Z',
   updatedAtUtc: '2026-09-29T10:00:00Z',
@@ -150,6 +156,28 @@ describe('WorkItemsPage', () => {
         expect.objectContaining({ search: 'login', page: 1 })
       );
       expect(screen.getByTestId('query-string').textContent).toContain('search=login');
+    });
+  });
+
+  it('retains the name filter with explicit current and historical matching guidance', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workItemsApi.list).mockResolvedValue(page([item]));
+    renderPage('/work-items?page=3');
+    await screen.findAllByText(item.title);
+
+    const assigneeFilter = screen.getByRole('textbox', { name: 'Assignee' });
+    const hint = screen.getByText(
+      'Matches current display names and historical assignments.'
+    );
+    expect(assigneeFilter.getAttribute('aria-describedby')).toBe(hint.id);
+    await user.type(assigneeFilter, 'Ahmad');
+
+    await waitFor(() => {
+      expect(workItemsApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ assignee: 'Ahmad', page: 1 })
+      );
+      expect(screen.getByTestId('query-string').textContent).toContain('assignee=Ahmad');
+      expect(screen.getByTestId('query-string').textContent).not.toContain('page=3');
     });
   });
 

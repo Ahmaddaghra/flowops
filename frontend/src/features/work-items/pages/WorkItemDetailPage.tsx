@@ -1,17 +1,9 @@
-import React, {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Activity, ArrowLeft, Calendar, Check, Clock, Copy, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -28,6 +20,8 @@ import { formatDate } from '@/lib/utils';
 import { WorkItemPriorityBadge } from '../components/WorkItemPriorityBadge';
 import { WorkItemStatusBadge } from '../components/WorkItemStatusBadge';
 import { WorkItemForm } from '../components/WorkItemForm';
+import { WorkItemAssignment } from '../components/WorkItemAssignment';
+import { WorkItemComments } from '../components/WorkItemComments';
 import { workItemMutationErrorMessage } from '../utils/mutationErrorMessage';
 
 const legalNextStatuses: Record<WorkItemStatus, WorkItemStatus[]> = {
@@ -52,6 +46,7 @@ const activityLabels: Record<WorkItemActivity['eventType'], string> = {
   CategoryChanged: 'Category updated',
   StatusChanged: 'Status changed',
   AssignmentChanged: 'Assignment changed',
+  CommentAdded: 'Comment added',
 };
 
 export const WorkItemDetailPage: React.FC = () => {
@@ -61,6 +56,11 @@ export const WorkItemDetailPage: React.FC = () => {
   const activityRequestSequence = useRef(0);
   const activityItemId = useRef(id);
   const mutationRouteSequence = useRef(0);
+  const pendingMutation = useRef<number | null>(null);
+  const editButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [mutationKind, setMutationKind] = useState<
+    'assignment' | 'status' | 'edit' | null
+  >(null);
   const [itemResult, setItemResult] = useState<{
     workItemId: string;
     item: WorkItem;
@@ -81,11 +81,9 @@ export const WorkItemDetailPage: React.FC = () => {
   } | null>(null);
   const [editingItem, setEditingItem] = useState<WorkItem | null>(null);
   const [isChangingStatus, setIsChangingStatus] = useState(false);
-  const [isSavingAssignee, setIsSavingAssignee] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [assignmentError, setAssignmentError] = useState<string | null>(null);
-  const [assigneeDraft, setAssigneeDraft] = useState('');
   const [copied, setCopied] = useState(false);
+  const closeEdit = useCallback(() => setEditingItem(null), []);
 
   useLayoutEffect(() => {
     detailItemId.current = id;
@@ -93,11 +91,22 @@ export const WorkItemDetailPage: React.FC = () => {
     activityItemId.current = id;
     activityRequestSequence.current++;
     mutationRouteSequence.current++;
+    pendingMutation.current = null;
+    setMutationKind(null);
     setIsChangingStatus(false);
-    setIsSavingAssignee(false);
     setStatusError(null);
-    setAssignmentError(null);
     setEditingItem(null);
+    const requestCounters = {
+      detail: detailRequestSequence,
+      activity: activityRequestSequence,
+      mutation: mutationRouteSequence,
+    };
+    return () => {
+      requestCounters.detail.current++;
+      requestCounters.activity.current++;
+      requestCounters.mutation.current++;
+      pendingMutation.current = null;
+    };
   }, [id]);
 
   const fetchDetail = useCallback(async () => {
@@ -117,7 +126,6 @@ export const WorkItemDetailPage: React.FC = () => {
       const data = await workItemsApi.getById(id);
       if (requestId === detailRequestSequence.current && detailItemId.current === id) {
         setItemResult({ workItemId: id, item: data });
-        setAssigneeDraft(data.assigneeName ?? '');
       }
     } catch (err: unknown) {
       if (requestId === detailRequestSequence.current && detailItemId.current === id) {
@@ -204,7 +212,8 @@ export const WorkItemDetailPage: React.FC = () => {
   };
 
   const handleChangeStatus = async (nextStatus: WorkItemStatus) => {
-    if (!id || !item) return;
+    if (!id || !item?.permissions?.canChangeStatus || pendingMutation.current !== null)
+      return;
     if (
       nextStatus === 'Done' &&
       !window.confirm('Mark this work item as Done? This status cannot be changed later.')
@@ -214,6 +223,8 @@ export const WorkItemDetailPage: React.FC = () => {
     setStatusError(null);
     setIsChangingStatus(true);
     const routeSequence = mutationRouteSequence.current;
+    pendingMutation.current = routeSequence;
+    setMutationKind('status');
     try {
       const updated = await workItemsApi.changeStatus(id, {
         status: nextStatus,
@@ -229,75 +240,74 @@ export const WorkItemDetailPage: React.FC = () => {
           workItemMutationErrorMessage(err, 'Could not change the work item status.')
         );
     } finally {
-      if (isCurrentMutationRoute(routeSequence)) setIsChangingStatus(false);
-    }
-  };
-
-  const handleAssign = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!id || !item) return;
-    setAssignmentError(null);
-    setIsSavingAssignee(true);
-    const routeSequence = mutationRouteSequence.current;
-    try {
-      const updated = await workItemsApi.assign(id, {
-        assigneeName: assigneeDraft.trim() || null,
-        expectedVersion: item.version,
-      });
       if (isCurrentMutationRoute(routeSequence)) {
-        updateCurrentItem(updated);
-        await fetchActivity();
+        pendingMutation.current = null;
+        setMutationKind(null);
+        setIsChangingStatus(false);
       }
-    } catch (err: unknown) {
-      if (isCurrentMutationRoute(routeSequence))
-        setAssignmentError(
-          workItemMutationErrorMessage(err, 'Could not update the assignment.')
-        );
-    } finally {
-      if (isCurrentMutationRoute(routeSequence)) setIsSavingAssignee(false);
-    }
-  };
-
-  const handleUnassign = async () => {
-    if (!id || !item) return;
-    setAssignmentError(null);
-    setIsSavingAssignee(true);
-    const routeSequence = mutationRouteSequence.current;
-    try {
-      const updated = await workItemsApi.assign(id, {
-        assigneeName: null,
-        expectedVersion: item.version,
-      });
-      if (isCurrentMutationRoute(routeSequence)) {
-        updateCurrentItem(updated);
-        setAssigneeDraft('');
-        await fetchActivity();
-      }
-    } catch (err: unknown) {
-      if (isCurrentMutationRoute(routeSequence))
-        setAssignmentError(
-          workItemMutationErrorMessage(err, 'Could not unassign this work item.')
-        );
-    } finally {
-      if (isCurrentMutationRoute(routeSequence)) setIsSavingAssignee(false);
     }
   };
 
   const handleEdit = async (request: CreateWorkItemRequest) => {
-    if (!id || !editingItem || editingItem.id !== id) return;
+    if (
+      !id ||
+      !editingItem ||
+      editingItem.id !== id ||
+      !item?.permissions?.canEdit ||
+      pendingMutation.current !== null
+    )
+      return;
     const routeSequence = mutationRouteSequence.current;
-    const updated = await workItemsApi.update(id, {
-      title: request.title,
-      description: request.description,
-      priority: request.priority,
-      categoryId: request.categoryId,
-      expectedVersion: editingItem.version,
-    });
-    if (isCurrentMutationRoute(routeSequence)) {
-      updateCurrentItem(updated);
-      setEditingItem(null);
-      await fetchActivity();
+    pendingMutation.current = routeSequence;
+    setMutationKind('edit');
+    try {
+      const updated = await workItemsApi.update(id, {
+        title: request.title,
+        description: request.description,
+        priority: request.priority,
+        categoryId: request.categoryId,
+        expectedVersion: editingItem.version,
+      });
+      if (isCurrentMutationRoute(routeSequence)) {
+        updateCurrentItem(updated);
+        await fetchActivity();
+        if (isCurrentMutationRoute(routeSequence)) setEditingItem(null);
+      }
+    } finally {
+      if (isCurrentMutationRoute(routeSequence)) {
+        pendingMutation.current = null;
+        setMutationKind(null);
+      }
     }
+  };
+
+  const handleAssign = async (assigneeUserId: string | null) => {
+    if (!id || !item?.permissions?.canAssign || pendingMutation.current !== null) return;
+    const routeSequence = mutationRouteSequence.current;
+    pendingMutation.current = routeSequence;
+    setMutationKind('assignment');
+    try {
+      const updated = await workItemsApi.assign(id, {
+        assigneeUserId,
+        expectedVersion: item.version,
+      });
+      if (isCurrentMutationRoute(routeSequence)) {
+        updateCurrentItem(updated);
+        await fetchActivity();
+      }
+    } finally {
+      if (isCurrentMutationRoute(routeSequence)) {
+        pendingMutation.current = null;
+        setMutationKind(null);
+      }
+    }
+  };
+
+  const refreshItem = () => {
+    if (pendingMutation.current !== null) return;
+    setStatusError(null);
+    void fetchDetail();
+    void fetchActivity();
   };
 
   if (isCurrentDetailLoading) {
@@ -351,14 +361,24 @@ export const WorkItemDetailPage: React.FC = () => {
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Work Items
         </Link>
-        <Button variant="outline" size="sm" onClick={() => void handleCopyId()}>
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
-          {copied ? 'Copied' : 'Copy ID'}
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={mutationKind !== null}
+            onClick={refreshItem}
+          >
+            Refresh work item
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void handleCopyId()}>
+            {copied ? (
+              <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            {copied ? 'Copied' : 'Copy ID'}
+          </Button>
+        </div>
       </div>
 
       <PageHeader
@@ -370,9 +390,16 @@ export const WorkItemDetailPage: React.FC = () => {
           </div>
         }
         action={
-          <Button variant="outline" onClick={() => setEditingItem(item)}>
-            Edit details
-          </Button>
+          item.permissions?.canEdit ? (
+            <Button
+              ref={editButtonRef}
+              variant="outline"
+              disabled={mutationKind !== null}
+              onClick={() => setEditingItem(item)}
+            >
+              Edit details
+            </Button>
+          ) : undefined
         }
       />
 
@@ -472,8 +499,7 @@ export const WorkItemDetailPage: React.FC = () => {
                             {event.description}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
-                            {activityLabels[event.eventType]} ·{' '}
-                            {event.actorUserId ?? 'System'} ·{' '}
+                            {activityLabels[event.eventType]} · {event.actorDisplayName} ·{' '}
                             {formatDate(event.createdAtUtc)}
                           </p>
                         </div>
@@ -483,6 +509,11 @@ export const WorkItemDetailPage: React.FC = () => {
                 )}
             </CardContent>
           </Card>
+          <WorkItemComments
+            key={item.id}
+            workItemId={item.id}
+            onCommentAdded={() => void fetchActivity()}
+          />
         </div>
 
         <div className="space-y-6">
@@ -502,7 +533,11 @@ export const WorkItemDetailPage: React.FC = () => {
                   {statusError}
                 </p>
               )}
-              {nextStatuses.length > 0 ? (
+              {!item.permissions?.canChangeStatus ? (
+                <p className="text-xs text-slate-500">
+                  Status changes are unavailable for this item.
+                </p>
+              ) : nextStatuses.length > 0 ? (
                 <div
                   className="flex flex-wrap gap-2"
                   role="group"
@@ -513,7 +548,7 @@ export const WorkItemDetailPage: React.FC = () => {
                       key={status}
                       size="sm"
                       onClick={() => void handleChangeStatus(status)}
-                      disabled={isChangingStatus}
+                      disabled={mutationKind !== null}
                       isLoading={isChangingStatus}
                     >
                       {status === 'Done'
@@ -530,65 +565,20 @@ export const WorkItemDetailPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Assignment</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-3" onSubmit={handleAssign}>
-                <p className="text-xs text-slate-500">
-                  Pre-auth assignment uses a display name. User accounts are part of Phase
-                  4.
-                </p>
-                <Input
-                  label="Assignee name"
-                  value={assigneeDraft}
-                  onChange={(event) => setAssigneeDraft(event.target.value)}
-                  maxLength={100}
-                  hint={
-                    item.assigneeName
-                      ? `Currently assigned to ${item.assigneeName}`
-                      : 'Leave empty to keep this item unassigned.'
-                  }
-                />
-                {assignmentError && (
-                  <p className="text-sm text-rose-700" role="alert">
-                    {assignmentError}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="submit"
-                    size="sm"
-                    isLoading={isSavingAssignee}
-                    disabled={
-                      isSavingAssignee ||
-                      assigneeDraft.trim() === (item.assigneeName ?? '')
-                    }
-                  >
-                    Save assignment
-                  </Button>
-                  {item.assigneeName && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleUnassign()}
-                      disabled={isSavingAssignee}
-                    >
-                      Unassign
-                    </Button>
-                  )}
-                </div>
-              </form>
-            </CardContent>
-          </Card>
+          <WorkItemAssignment
+            key={item.id}
+            item={item}
+            isMutating={mutationKind !== null}
+            onAssign={handleAssign}
+            onRefresh={refreshItem}
+          />
         </div>
       </div>
 
       <Modal
         isOpen={editingItem !== null}
-        onClose={() => setEditingItem(null)}
+        onClose={closeEdit}
+        triggerRef={editButtonRef}
         title="Edit work item details"
         description="Status changes are handled separately in the workflow controls."
         className="max-h-[90vh] overflow-y-auto"
@@ -619,7 +609,7 @@ export const WorkItemDetailPage: React.FC = () => {
               categoryId: editingItem.categoryId,
             }}
             submitLabel="Save changes"
-            onCancel={() => setEditingItem(null)}
+            onCancel={closeEdit}
             onSubmit={handleEdit}
           />
         )}

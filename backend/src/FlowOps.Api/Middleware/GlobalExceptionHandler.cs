@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace FlowOps.Api.Middleware;
@@ -14,12 +13,10 @@ namespace FlowOps.Api.Middleware;
 public class GlobalExceptionHandler : IExceptionHandler
 {
     private readonly ILogger<GlobalExceptionHandler> _logger;
-    private readonly IHostEnvironment _env;
 
-    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IHostEnvironment env)
+    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _env = env ?? throw new ArgumentNullException(nameof(env));
     }
 
     public async ValueTask<bool> TryHandleAsync(
@@ -50,6 +47,12 @@ public class GlobalExceptionHandler : IExceptionHandler
 
         var (statusCode, title, detail) = exception switch
         {
+            ForbiddenOperationException => (
+                StatusCodes.Status403Forbidden, "Forbidden", "You do not have permission to perform this action."
+            ),
+            AuthenticationRequiredException => (
+                StatusCodes.Status401Unauthorized, "Unauthorized", "Authentication is required."
+            ),
             WorkItemConcurrencyException => (
                 StatusCodes.Status409Conflict,
                 "Work Item Concurrency Conflict",
@@ -73,7 +76,7 @@ public class GlobalExceptionHandler : IExceptionHandler
             _ => (
                 StatusCodes.Status500InternalServerError,
                 "An unexpected error occurred",
-                _env.IsDevelopment() ? exception.Message : "An unexpected server error occurred. Please try again later."
+                "An unexpected server error occurred. Please try again later."
             )
         };
 

@@ -19,11 +19,22 @@ public class WorkItemServiceTests
 {
     private readonly Mock<IWorkItemStore> _mockStore;
     private readonly WorkItemService _service;
+    private static readonly Guid UserId = Guid.Parse("30000000-0000-0000-0000-000000000010");
+    private static readonly Guid AssigneeId = Guid.Parse("30000000-0000-0000-0000-000000000011");
 
     public WorkItemServiceTests()
     {
         _mockStore = new Mock<IWorkItemStore>();
-        _service = new WorkItemService(_mockStore.Object, NullLogger<WorkItemService>.Instance);
+        var users = new Mock<IUserDirectory>();
+        users.Setup(x => x.ExistsActiveAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        users.Setup(x => x.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, UserSummaryResponse>
+            {
+                [UserId] = new(UserId, "Current user"),
+                [AssigneeId] = new(AssigneeId, "Ahmad Daghra")
+            });
+        _service = new WorkItemService(_mockStore.Object, NullLogger<WorkItemService>.Instance,
+            new TestCurrentUser(UserId), users.Object);
     }
 
     [Fact]
@@ -45,7 +56,7 @@ public class WorkItemServiceTests
             Title = "Implement login page",
             Description = "User authentication workflow",
             Priority = "High",
-            AssigneeName = "Ahmad Daghra"
+            AssigneeUserId = AssigneeId
         };
 
         // Act
@@ -64,7 +75,9 @@ public class WorkItemServiceTests
         Assert.NotNull(savedItem);
         Assert.Equal("Implement login page", savedItem.Title);
         Assert.Equal(WorkItemPriority.High, savedItem.Priority);
-        Assert.Equal("Ahmad Daghra", savedItem.AssigneeName);
+        Assert.Equal(AssigneeId, savedItem.AssigneeUserId);
+        Assert.Equal(UserId, savedItem.CreatedByUserId);
+        Assert.Null(savedItem.AssigneeName);
 
         _mockStore.Verify(x => x.AddAsync(It.IsAny<WorkItem>(), It.IsAny<CancellationToken>()), Times.Once);
         _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -246,11 +259,11 @@ public class WorkItemServiceTests
             .Callback<ActivityEvent, CancellationToken>((activity, _) => events.Add(activity)).Returns(Task.CompletedTask);
         _mockStore.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Ahmad", ExpectedVersion = item.Version });
-        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = null, ExpectedVersion = item.Version });
+        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeUserId = AssigneeId, ExpectedVersion = item.Version });
+        await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeUserId = null, ExpectedVersion = item.Version });
 
         Assert.Null(item.AssigneeName);
-        Assert.Equal(new[] { "Assigned to Ahmad", "Work item unassigned" }, events.Select(x => x.Description));
+        Assert.Equal(new[] { "Assigned to Ahmad Daghra", "Work item unassigned" }, events.Select(x => x.Description));
         _mockStore.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
@@ -269,7 +282,7 @@ public class WorkItemServiceTests
         {
             "update" => await _service.UpdateAsync(item.Id, new UpdateWorkItemRequest { Title = "After", Priority = "Medium", ExpectedVersion = 1 }),
             "status" => await _service.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "InProgress", ExpectedVersion = 1 }),
-            _ => await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Winner", ExpectedVersion = 1 })
+            _ => await _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeUserId = AssigneeId, ExpectedVersion = 1 })
         };
 
         Assert.NotNull(result);
@@ -301,7 +314,7 @@ public class WorkItemServiceTests
                 ExpectedVersion = 1
             }),
             "status" => _service.ChangeStatusAsync(item.Id, new ChangeWorkItemStatusRequest { Status = "InProgress", ExpectedVersion = 1 }),
-            _ => _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeName = "Stale assignee", ExpectedVersion = 1 })
+            _ => _service.AssignAsync(item.Id, new AssignWorkItemRequest { AssigneeUserId = AssigneeId, ExpectedVersion = 1 })
         });
 
         Assert.Equal("Winning title", item.Title);

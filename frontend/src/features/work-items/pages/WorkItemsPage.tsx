@@ -278,7 +278,8 @@ export const WorkItemsPage: React.FC = () => {
           />
           <Input
             label="Assignee"
-            placeholder="Filter by name"
+            placeholder="Current or historical name"
+            hint="Matches current display names and historical assignments."
             value={query.assignee ?? ''}
             onChange={(event) => updateParam('assignee', event.target.value)}
           />
@@ -322,7 +323,8 @@ export const WorkItemsPage: React.FC = () => {
             </p>
           ) : (
             <p className="text-xs text-slate-500">
-              Search matches titles, descriptions, and assignee names.
+              Search matches titles, descriptions, current assignee names, and historical
+              assignments.
             </p>
           )}
           {hasListOptions && (
